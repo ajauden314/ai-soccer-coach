@@ -1162,6 +1162,7 @@
             stream = null;
             video.pause();
             video.srcObject = null;
+            window.tactiqLandmarks = null;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             placeholder.classList.remove('hidden');
             startButton.disabled = false;
@@ -1309,11 +1310,13 @@
                 try {
                     const result = landmarker.detectForVideo(video, performance.now());
                     if (result.landmarks?.length) {
+                        window.tactiqLandmarks = result.landmarks[0];
                         drawSkeleton(result.landmarks[0]);
                         analyzeLandmarks(result.landmarks[0]);
                         document.getElementById('tactiq-pose-label').textContent = 'POSE DETECTED';
                         document.getElementById('tactiq-pose-dot').className = 'w-1.5 h-1.5 rounded-full bg-[#00f59b]';
                     } else {
+                        window.tactiqLandmarks = null;
                         ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
                         document.getElementById('tactiq-pose-label').textContent = 'NO POSE';
                         document.getElementById('tactiq-pose-dot').className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
@@ -2037,14 +2040,15 @@ MediaPipe supplies pose landmarks; it does not supply soccer-technique labels au
 
 - **Camera:** browser \`getUserMedia()\` permission.
 - **Pose estimation:** MediaPipe Pose Landmarker in VIDEO mode.
+- **Ball detection:** MediaPipe Object Detector ("sports ball" class) with kick detection from ball speed near the feet.
 - **Overlay:** canvas draws the detected skeleton over the video.
 - **Feature extraction:** JavaScript calculates selected 2D joint angles.
 - **Feedback:** local rules summarize measured values without fabricated scores.
 
-The camera frames stay in the browser in this implementation. The MediaPipe library and model are downloaded from their public hosts. The next ML stage is a labeled soccer-specific classifier, which is not implemented yet.`;
+The camera frames stay in the browser in this implementation. The MediaPipe library and models are downloaded from their public hosts. The next ML stage is a labeled soccer-specific classifier, which is not implemented yet.`;
                 return `## TACTIQ MVP Status
 
-**Implemented in this version:** browser camera, MediaPipe pose landmarks, skeleton overlay, selected joint-angle calculations, visibility estimate, local coaching rules, logo upload/persistence, theme toggle, chat history, and the project blueprint.
+**Implemented in this version:** browser camera, MediaPipe pose landmarks, skeleton overlay, selected joint-angle calculations, visibility estimate, ball detection with automatic kick feedback, local coaching rules, logo upload/persistence, theme toggle, chat history, and the project blueprint.
 
 **Future work:** collect a consented soccer-specific dataset, label skill phases, train a lightweight classifier, evaluate it on players not used for training, and optimize performance on phones.
 
@@ -2203,5 +2207,8 @@ If your camera is running, use **Analyze Measurements** to attach the latest det
                 .replace(/>/g, '&gt;');
         }
     </script>
+
+    <!-- TACTIQ ball detection + kick analysis (keep tactiq-ball-analysis.js in the same folder) -->
+    <script type="module" src="tactiq-ball-analysis.js"></script>
 </body>
 </html>
