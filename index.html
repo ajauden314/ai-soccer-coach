@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="en" class="dark scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Soccer Coach — Real-Time Biomechanics & Virtual Training Platform</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Marked.js for Markdown Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- DOMPurify for Safe HTML Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        pitch: {
+                            50: '#ecfdf5',
+                            100: '#d1fae5',
+                            400: '#4ade80',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            850: '#16241d',
+                            900: '#111c16',
+                            950: '#0b130f',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.25s ease-out forwards',
+                        'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Subtle tactical pitch grid overlay */
+        .pitch-grid {
+            background-image: 
+                linear-gradient(to right, rgba(34, 197, 94, 0.045) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(34, 197, 94, 0.045) 1px, transparent 1px);
+            background-size: 36px 36px;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.35);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(34, 197, 94, 0.55);
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Markdown Content Styling inside AI Bubbles */
+        .prose-chat p {
+            margin-bottom: 0.75rem;
+            line-height: 1.65;
+        }
+        .prose-chat p:last-child {
+            margin-bottom: 0;
+        }
+        .prose-chat ul, .prose-chat ol {
+            margin-left: 1.25rem;
+            margin-bottom: 0.75rem;
+        }
+        .prose-chat ul {
+            list-style-type: disc;
+        }
+        .prose-chat ol {
+            list-style-type: decimal;
+        }
+        .prose-chat li {
+            margin-bottom: 0.3rem;
+        }
+        .prose-chat strong {
+            color: #22c55e;
+            font-weight: 600;
+        }
+        html:not(.dark) .prose-chat strong {
+            color: #15803d;
+        }
+        .prose-chat table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.85rem 0;
+            font-size: 0.82rem;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .prose-chat th {
+            background-color: rgba(34, 197, 94, 0.14);
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(34, 197, 94, 0.25);
+        }
+        .prose-chat td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        }
+        .prose-chat pre {
+            background-color: #0b130f;
+            color: #f8fafc;
+            padding: 0.875rem 1rem;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(34, 197, 94, 0.25);
+            overflow-x: auto;
+            margin: 0.75rem 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+        }
+        .prose-chat code:not(pre code) {
+            background-color: rgba(34, 197, 94, 0.12);
+            color: #4ade80;
+            padding: 0.15rem 0.35rem;
+            border-radius: 0.375rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+        }
+        html:not(.dark) .prose-chat code:not(pre code) {
+            color: #15803d;
+        }
+        .prose-chat h1, .prose-chat h2, .prose-chat h3 {
+            font-weight: 700;
+            margin-top: 1rem;
+            margin-bottom: 0.45rem;
+            letter-spacing: -0.01em;
+        }
+        .prose-chat h1 { font-size: 1.2rem; }
+        .prose-chat h2 { font-size: 1.08rem; }
+        .prose-chat h3 { font-size: 0.98rem; }
+        .prose-chat blockquote {
+            border-left: 3px solid #22c55e;
+            background: rgba(34, 197, 94, 0.07);
+            padding: 0.5rem 0.85rem;
+            border-radius: 0 0.5rem 0.5rem 0;
+            margin: 0.75rem 0;
+        }
+
+        /* Typing indicator dots */
+        .typing-dot {
+            animation: typingBounce 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes typingBounce {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-[#0b130f] text-slate-800 dark:text-slate-100 antialiased selection:bg-emerald-500 selection:text-slate-950 pitch-grid">
+
+    <!-- ========================================== -->
+    <!-- 1. TOP STICKY NAVIGATION BAR               -->
+    <!-- ========================================== -->
+    <header class="sticky top-0 z-40 w-full bg-white/85 dark:bg-[#0b130f]/85 backdrop-blur-md border-b border-slate-200/80 dark:border-emerald-950/80">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+            <!-- Brand Logo -->
+            <a href="#" class="flex items-center gap-3 group">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                    <i data-lucide="trophy" class="w-5 h-5 stroke-[2.2]"></i>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">AI Soccer Coach</span>
+                    <span class="hidden sm:inline-flex items-center text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                        Computer Vision & Biomechanics
+                    </span>
+                </div>
+            </a>
+
+            <!-- Desktop Smooth-Scroll Anchor Links -->
+            <nav class="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                <a href="#live-coach" class="hover:text-emerald-500 transition-colors">Live AI Coach</a>
+                <a href="#how-it-works" class="hover:text-emerald-500 transition-colors">How It Works</a>
+                <a href="#cv-pipeline" class="hover:text-emerald-500 transition-colors">CV & ML Pipeline</a>
+                <a href="#ethics-safety" class="hover:text-emerald-500 transition-colors">Ethics & Safety</a>
+            </nav>
+
+            <!-- Right Controls: Theme Toggle + Primary CTA -->
+            <div class="flex items-center gap-2.5">
+                <button onclick="toggleDarkMode()" title="Toggle Light/Dark Theme" aria-label="Toggle Light/Dark Theme" class="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-200/60 dark:hover:bg-[#16241d] transition-colors cursor-pointer">
+                    <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+                    <i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i>
+                </button>
+                <a href="#live-coach" onclick="focusChatInput()" class="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-md shadow-emerald-500/20 transition-all active:scale-95">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+                    <span>Launch Coach</span>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ========================================== -->
+    <!-- 2. HERO BANNER SECTION                     -->
+    <!-- ========================================== -->
+    <section class="relative overflow-hidden pt-12 pb-14 sm:pt-16 sm:pb-20 border-b border-slate-200/70 dark:border-emerald-950/70">
+        <!-- Ambient Radial Pitch Glow -->
+        <div class="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[48rem] h-[22rem] bg-emerald-500/10 blur-3xl rounded-full"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+            <div class="max-w-3xl mx-auto text-center space-y-6">
+                <!-- Eyebrow Pill -->
+                <div class="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-3.5 py-1.5 rounded-full">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Virtual Biomechanics & Solo Training Platform</span>
+                </div>
+
+                <!-- Headline -->
+                <h1 class="text-3xl sm:text-5xl lg:text-[3.35rem] font-black tracking-tight text-slate-900 dark:text-white leading-[1.12]">
+                    Stop Practicing Bad Habits. Train With <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">Real-Time AI Biomechanics.</span>
+                </h1>
+
+                <!-- Subheadline -->
+                <p class="text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
+                    Solo soccer players often reinforce flawed mechanics when practicing without a coach. Our computer-vision platform transforms standard smartphone video into instant pose-tracking telemetry, joint-angle diagnostics, and injury-prevention feedback.
+                </p>
+
+                <!-- Quick-Action Buttons -->
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <a href="#live-coach" onclick="focusChatInput()" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]">
+                        <i data-lucide="activity" class="w-4 h-4 stroke-[2.4]"></i>
+                        <span>Start Coaching Session</span>
+                    </a>
+                    <a href="#cv-pipeline" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white dark:bg-[#111c16] hover:bg-slate-100 dark:hover:bg-[#16241d] text-slate-800 dark:text-slate-100 font-semibold text-sm px-6 py-3.5 rounded-2xl border border-slate-200 dark:border-emerald-900/70 transition-all">
+                        <i data-lucide="cpu" class="w-4 h-4 text-emerald-500"></i>
+                        <span>Explore ML Architecture</span>
+                    </a>
+                </div>
+
+                <!-- Key Telemetry Highlight Pills -->
+                <div class="pt-4 flex flex-wrap items-center justify-center gap-2.5 text-xs font-mono">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
+                        <i data-lucide="scan" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>MediaPipe / YOLOv8 Pose</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
+                        <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>3D CNN Classification</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
+                        <i data-lucide="trending-up" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>Biomechanical Regression</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
+                        <i data-lucide="volume-2" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>Zero-Lag Audio Cues</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 3. DEDICATED INTERACTIVE AI CHAT WORKSPACE -->
+    <!-- ========================================== -->
+    <section id="live-coach" class="py-10 sm:py-14 scroll-mt-16">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+            <!-- Section Header Bar -->
+            <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-5">
+                <div>
+                    <div class="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-emerald-500 font-semibold mb-1">
+                        <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+                        <span>Interactive Virtual Coaching Workspace</span>
+                    </div>
+                    <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Live AI Soccer Coach Console</h2>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[11px] border border-emerald-500/20">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span>Engine Online</span>
+                    </span>
+                    <button onclick="openDrillModal()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer">
+                        <i data-lucide="scan-line" class="w-3.5 h-3.5"></i>
+                        <span>Quick Drill Scan</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Embedded Chat Application Frame -->
+            <div class="relative flex h-[78vh] min-h-[600px] max-h-[840px] w-full rounded-3xl overflow-hidden border border-slate-200 dark:border-emerald-900/80 bg-white dark:bg-[#0b130f] shadow-2xl shadow-emerald-950/30">
+
+                <!-- Mobile Sidebar Backdrop (Scoped inside Workspace) -->
+                <div id="sidebar-backdrop" onclick="toggleSidebar()" class="absolute inset-0 bg-slate-950/70 backdrop-blur-xs z-20 hidden lg:hidden transition-opacity"></div>
+
+                <!-- Sidebar (Mode Switcher, Quick Prompts & Conversation History) -->
+                <aside id="sidebar" class="absolute inset-y-0 left-0 z-30 w-80 bg-white dark:bg-[#111c16] border-r border-slate-200 dark:border-emerald-950/90 flex flex-col transform -translate-x-full lg:translate-x-0 lg:static transition-transform duration-300 ease-in-out">
+                    
+                    <!-- Brand Header -->
+                    <div class="p-4 border-b border-slate-200/80 dark:border-emerald-950/80 flex items-center justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/20">
+                                <i data-lucide="trophy" class="w-5 h-5 stroke-[2.2]"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="font-bold text-sm tracking-tight text-slate-900 dark:text-white">AI Soccer Coach</span>
+                                    <span class="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">v1.0</span>
+                                </div>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Launchpad Project Team</p>
+                            </div>
+                        </div>
+                        <button onclick="toggleSidebar()" class="lg:hidden p-2 text-slate-400 hover:text-white rounded-xl hover:bg-[#16241d]">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <!-- Dual Mode Switcher -->
+                    <div class="p-3 border-b border-slate-200/80 dark:border-emerald-950/80">
+                        <p class="text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 px-1">Active AI Persona</p>
+                        <div class="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-[#0b130f] rounded-xl border border-slate-200/80 dark:border-emerald-950">
+                            <button id="mode-btn-coach" onclick="setAppMode('coach')" class="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-emerald-500 text-slate-950 shadow-xs">
+                                <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+                                <span>Player Coach</span>
+                            </button>
+                            <button id="mode-btn-builder" onclick="setAppMode('builder')" class="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                                <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+                                <span>Project Team</span>
+                            </button>
+                        </div>
+                        <p id="mode-description" class="text-[11px] text-slate-500 dark:text-slate-400 mt-2 px-1 leading-relaxed">
+                            Simulates real-time pose tracking, biomechanical regression metrics & injury prevention tips.
+                        </p>
+                    </div>
+
+                    <!-- Action Buttons: New Chat & Drill Analyzer -->
+                    <div class="p-3 space-y-2 border-b border-slate-200/80 dark:border-emerald-950/80">
+                        <button onclick="openDrillModal()" class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-xs py-2.5 px-3.5 rounded-xl shadow-sm shadow-emerald-500/15 transition-all active:scale-[0.98] cursor-pointer">
+                            <i data-lucide="scan-line" class="w-4 h-4"></i>
+                            <span>Drill & Biomechanics Analyzer</span>
+                        </button>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="startNewChat()" class="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#16241d] dark:hover:bg-emerald-950/80 text-slate-700 dark:text-slate-200 font-medium text-xs py-2 px-3 rounded-xl transition-colors cursor-pointer">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                                <span>New Session</span>
+                            </button>
+                            <button onclick="toggleBlueprintModal(true)" class="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#16241d] dark:hover:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 font-medium text-xs py-2 px-3 rounded-xl border border-emerald-500/20 transition-colors cursor-pointer">
+                                <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                                <span>Blueprint</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Conversations List -->
+                    <div class="flex-1 overflow-y-auto p-3 space-y-1" id="conversation-list">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+
+                    <!-- Sidebar Footer -->
+                    <div class="p-3.5 border-t border-slate-200/80 dark:border-emerald-950/80 flex items-center justify-between bg-slate-50/50 dark:bg-[#0b130f]/60">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">Pose • Class • Regress</span>
+                        </div>
+                        <button onclick="toggleDarkMode()" title="Toggle Light/Dark Theme" class="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-200/60 dark:hover:bg-[#16241d] transition-colors cursor-pointer">
+                            <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+                            <i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i>
+                        </button>
+                    </div>
+                </aside>
+
+                <!-- Main Chat Area -->
+                <div class="flex-1 flex flex-col h-full min-w-0 bg-slate-50 dark:bg-[#0b130f] pitch-grid relative">
+                    
+                    <!-- Workspace Top Bar -->
+                    <div class="h-14 px-4 sm:px-6 border-b border-slate-200/80 dark:border-emerald-950/80 bg-white/85 dark:bg-[#111c16]/85 backdrop-blur-md flex items-center justify-between shrink-0 z-10">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <button onclick="toggleSidebar()" class="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-[#16241d] transition-colors">
+                                <i data-lucide="menu" class="w-5 h-5"></i>
+                            </button>
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span id="header-mode-badge" class="shrink-0 inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                                    <i data-lucide="activity" class="w-3 h-3"></i>
+                                    <span>COACH</span>
+                                </span>
+                                <h3 id="current-chat-title" class="font-semibold text-slate-800 dark:text-slate-100 truncate text-sm sm:text-base">Solo Training Session</h3>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <button onclick="openDrillModal()" class="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 px-3 py-1.5 rounded-xl transition-colors cursor-pointer">
+                                <i data-lucide="scan-line" class="w-3.5 h-3.5"></i>
+                                <span>Analyze Drill</span>
+                            </button>
+                            <button onclick="toggleBlueprintModal(true)" title="View Launchpad Project Blueprint" class="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-[#16241d] dark:hover:bg-emerald-950 px-3 py-1.5 rounded-xl transition-colors cursor-pointer">
+                                <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-emerald-500"></i>
+                                <span class="hidden md:inline">Project Blueprint</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Scrollable Message Container -->
+                    <div id="chat-scroll-container" class="flex-1 overflow-y-auto px-4 sm:px-6 py-6 scroll-smooth">
+                        <div id="messages-wrapper" class="max-w-3xl mx-auto space-y-6 pb-4">
+                            
+                            <!-- Welcome Empty State -->
+                            <div id="empty-state" class="py-4 sm:py-8 text-center space-y-6 animate-fade-in">
+                                <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-slate-950 shadow-xl shadow-emerald-500/20 mx-auto">
+                                    <i data-lucide="shield-check" class="w-7 h-7 stroke-[2.2]"></i>
+                                    <span class="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0b130f]"></span>
+                                </div>
+
+                                <div class="space-y-2 max-w-lg mx-auto">
+                                    <div class="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+                                        <span>Launchpad AI • Computer Vision & Biomechanics</span>
+                                    </div>
+                                    <h3 id="welcome-heading" class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Train Smarter. Build Zero Bad Habits.</h3>
+                                    <p id="welcome-subtitle" class="text-sm text-slate-600 dark:text-slate-400">
+                                        Get instant biomechanical feedback, joint-angle diagnostics, and injury-prevention drills for injury-free execution.
+                                    </p>
+                                </div>
+
+                                <!-- ML Pipeline Mini-Pill Strip -->
+                                <div class="flex flex-wrap items-center justify-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">1. MediaPipe / YOLOv8-Pose</span>
+                                    <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-500"></i>
+                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">2. Dim. Reduction</span>
+                                    <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-500"></i>
+                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">3. 3D CNN Classification</span>
+                                    <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-500"></i>
+                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">4. Biomechanical Regression</span>
+                                </div>
+
+                                <!-- Dynamic Suggested Prompts Grid -->
+                                <div id="suggestion-cards-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto text-left pt-1">
+                                    <!-- Populated dynamically based on Coach vs Builder mode -->
+                                </div>
+                            </div>
+
+                            <!-- Dynamic Messages List -->
+                            <div id="messages-list" class="space-y-6"></div>
+
+                            <!-- Loading Indicator Bubble -->
+                            <div id="loading-indicator" class="hidden animate-fade-in">
+                                <div class="flex items-start gap-3.5 max-w-2xl">
+                                    <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 shrink-0 mt-0.5 shadow-xs">
+                                        <i data-lucide="activity" class="w-4 h-4"></i>
+                                    </div>
+                                    <div class="bg-white dark:bg-[#111c16] border border-slate-200/80 dark:border-emerald-950 rounded-2xl rounded-tl-sm px-4 py-3.5 shadow-xs flex items-center gap-3">
+                                        <div class="flex items-center gap-1.5 h-4">
+                                            <span class="w-2 h-2 rounded-full bg-emerald-500 typing-dot"></span>
+                                            <span class="w-2 h-2 rounded-full bg-emerald-500 typing-dot"></span>
+                                            <span class="w-2 h-2 rounded-full bg-emerald-500 typing-dot"></span>
+                                        </div>
+                                        <span id="loading-label" class="text-xs font-mono text-slate-400">Analyzing pose & biomechanics...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Input Area -->
+                    <div class="p-3 sm:p-4 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent dark:from-[#0b130f] dark:via-[#0b130f]/95 shrink-0">
+                        <div class="max-w-3xl mx-auto">
+                            <!-- Quick Action Chips above input -->
+                            <div id="quick-chips-bar" class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1 no-scrollbar">
+                                <!-- Populated dynamically -->
+                            </div>
+
+                            <form id="chat-form" onsubmit="handleFormSubmit(event)" class="relative flex items-end gap-2 bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 focus-within:border-emerald-500 dark:focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-500/10 rounded-2xl p-2 shadow-sm transition-all">
+                                <button 
+                                    type="button"
+                                    onclick="openDrillModal()"
+                                    title="Open Drill & Biomechanics Analyzer"
+                                    class="p-2.5 rounded-xl text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors shrink-0 cursor-pointer"
+                                >
+                                    <i data-lucide="scan-line" class="w-5 h-5"></i>
+                                </button>
+
+                                <textarea 
+                                    id="message-input" 
+                                    rows="1" 
+                                    placeholder="Describe your solo drill or ask for biomechanics & form feedback..." 
+                                    class="w-full max-h-36 bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm sm:text-base px-2 py-2 resize-none focus:outline-none leading-relaxed"
+                                    oninput="autoResizeTextarea(this)"
+                                    onkeydown="handleTextareaKeydown(event)"
+                                ></textarea>
+                                
+                                <button 
+                                    type="submit" 
+                                    id="send-button" 
+                                    disabled
+                                    title="Send Message"
+                                    class="p-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-200 dark:disabled:bg-[#16241d] text-slate-950 disabled:text-slate-400 dark:disabled:text-slate-600 transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed active:scale-95 font-semibold"
+                                >
+                                    <i data-lucide="arrow-up" class="w-5 h-5 stroke-[2.5]"></i>
+                                </button>
+                            </form>
+                            <p class="text-[11px] text-center text-slate-400 dark:text-slate-500 mt-2">
+                                AI Soccer Coach • Powered by Pose Estimation, Classification & Biomechanical Regression
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 4. HOW IT WORKS & 4-STAGE CV/ML PIPELINE   -->
+    <!-- ========================================== -->
+    <section id="how-it-works" class="py-16 sm:py-20 border-t border-slate-200/80 dark:border-emerald-950/80 bg-white/40 dark:bg-[#111c16]/40 scroll-mt-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
+            
+            <!-- How It Works 3-Step Workflow -->
+            <div>
+                <div class="max-w-2xl">
+                    <span class="text-xs font-mono uppercase tracking-wider text-emerald-500 font-bold">Solo Training Workflow</span>
+                    <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-1">How AI Soccer Coach Works</h2>
+                    <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-2">
+                        Designed for solo athletes training in a backyard, park, or indoor court with nothing more than a standard smartphone.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
+                    <div class="p-6 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/60 shadow-xs">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-mono font-bold text-sm border border-emerald-500/25 mb-4">01</div>
+                        <h3 class="font-bold text-base text-slate-900 dark:text-white">Record Your Solo Drill</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                            Prop your phone up on a tripod or water bottle and perform shooting, passing, first-touch, or dribbling repetitions.
+                        </p>
+                    </div>
+                    <div class="p-6 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/60 shadow-xs">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-mono font-bold text-sm border border-emerald-500/25 mb-4">02</div>
+                        <h3 class="font-bold text-base text-slate-900 dark:text-white">Real-Time Pose & Telemetry</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                            Skeletal keypoints track plant-foot distance, knee flexion, hip rotation, and torso lean frame-by-frame to score your execution.
+                        </p>
+                    </div>
+                    <div class="p-6 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/60 shadow-xs">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-mono font-bold text-sm border border-emerald-500/25 mb-4">03</div>
+                        <h3 class="font-bold text-base text-slate-900 dark:text-white">Instant Fixes & Audio Cues</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                            Receive immediate biomechanical root-cause diagnostics, injury-risk warnings, and concise 3-word audio cues for your next rep.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4-Stage CV & ML Architecture Showcase -->
+            <div id="cv-pipeline" class="scroll-mt-24 pt-4">
+                <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+                    <div class="max-w-2xl">
+                        <span class="text-xs font-mono uppercase tracking-wider text-emerald-500 font-bold">Under The Hood</span>
+                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-1">4-Stage CV & ML Pipeline</h2>
+                        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-2">
+                            Combining pose estimation, dimensionality reduction, spatiotemporal action classification, and continuous biomechanical regression.
+                        </p>
+                    </div>
+                    <button onclick="toggleBlueprintModal(true)" class="self-start sm:self-auto inline-flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 px-4 py-2.5 rounded-xl transition-colors cursor-pointer">
+                        <i data-lucide="file-code-2" class="w-4 h-4"></i>
+                        <span>Inspect Full Blueprint</span>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <!-- Stage 1 -->
+                    <div class="p-5 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-[11px] font-mono font-bold text-emerald-500">STAGE 01</span>
+                                <i data-lucide="scan" class="w-4 h-4 text-emerald-500"></i>
+                            </div>
+                            <h3 class="font-bold text-base text-slate-900 dark:text-white">Pose Estimation & Keypoints</h3>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                                Uses <strong>MediaPipe</strong> and <strong>YOLOv8-Pose</strong> to extract 2D/3D skeletal joint coordinates (ankles, knees, hips, shoulders) directly from practice video.
+                            </p>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-emerald-950 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                            Input: 30–60 FPS Smartphone Video
+                        </div>
+                    </div>
+
+                    <!-- Stage 2 -->
+                    <div class="p-5 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-[11px] font-mono font-bold text-emerald-500">STAGE 02</span>
+                                <i data-lucide="minimize-2" class="w-4 h-4 text-emerald-500"></i>
+                            </div>
+                            <h3 class="font-bold text-base text-slate-900 dark:text-white">Dimensionality Reduction</h3>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                                Applies <strong>PCA & keypoint feature compression</strong> to distill dense frame-by-frame coordinate sequences into low-latency biomechanical vectors.
+                            </p>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-emerald-950 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                            Output: Normalized Joint Trajectories
+                        </div>
+                    </div>
+
+                    <!-- Stage 3 -->
+                    <div class="p-5 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-[11px] font-mono font-bold text-emerald-500">STAGE 03</span>
+                                <i data-lucide="layers" class="w-4 h-4 text-emerald-500"></i>
+                            </div>
+                            <h3 class="font-bold text-base text-slate-900 dark:text-white">Action Classification</h3>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                                <strong>3D CNNs & Video Transformers</strong> trained on SoccerNet, Kinetics-400, and custom solo drills classify the skill move and form quality.
+                            </p>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-emerald-950 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                            Labels: Proper / Needs Fix / Injury Risk
+                        </div>
+                    </div>
+
+                    <!-- Stage 4 -->
+                    <div class="p-5 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-[11px] font-mono font-bold text-emerald-500">STAGE 04</span>
+                                <i data-lucide="trending-up" class="w-4 h-4 text-emerald-500"></i>
+                            </div>
+                            <h3 class="font-bold text-base text-slate-900 dark:text-white">Biomechanical Regression</h3>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                                Predicts continuous metrics including limb angular velocity, joint-angle accuracy, execution success probability, and ACL/ankle strain risk.
+                            </p>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-emerald-950 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                            Output: Telemetry + 3-Word Audio Cue
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 5. ETHICS, SAFETY & ENGINEERING CHALLENGES -->
+    <!-- ========================================== -->
+    <section id="ethics-safety" class="py-16 sm:py-20 border-t border-slate-200/80 dark:border-emerald-950/80 scroll-mt-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="max-w-2xl mb-10">
+                <span class="text-xs font-mono uppercase tracking-wider text-emerald-500 font-bold">Responsible Sports AI</span>
+                <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-1">Ethics, Safety & Engineering Focus</h2>
+                <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-2">
+                    Built with youth athlete privacy, anatomical fairness, and real-world pitch constraints at the center of our engineering roadmap.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Card 1: Athlete Video Privacy -->
+                <div class="p-6 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0 border border-emerald-500/25">
+                        <i data-lucide="lock" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-slate-900 dark:text-white">Athlete Video Privacy</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
+                            Skeletal keypoints are extracted locally on-device whenever possible so youth players retain full control over their raw training footage without unnecessary cloud video retention.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 2: Diverse Body-Type Calibration -->
+                <div class="p-6 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0 border border-emerald-500/25">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-slate-900 dark:text-white">Diverse Body-Type Calibration</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
+                            Joint coordinate vectors are normalized by limb-segment ratios rather than raw pixel distances, ensuring fair biomechanics evaluation across varying heights, ages, and builds.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 3: Biomechanical Safety Guardrails -->
+                <div class="p-6 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0 border border-emerald-500/25">
+                        <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-slate-900 dark:text-white">Biomechanical Safety Guardrails</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
+                            Prioritizes injury prevention over raw ball power—flagging inward knee collapse (valgus), locked-knee landings, and over-rotation before recommending higher-intensity reps.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 4: Real-World Engineering Challenges -->
+                <div class="p-6 rounded-2xl bg-white dark:bg-[#111c16] border border-amber-500/30 flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/25">
+                        <i data-lucide="cpu" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-slate-900 dark:text-white">Real-World Engineering Challenges</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
+                            Actively solving outdoor pitch glare and tripod angle variance, mobile thermal/latency budgets, and hands-free audio cues that trigger cleanly between reps.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 6. FOOTER                                  -->
+    <!-- ========================================== -->
+    <footer class="border-t border-slate-200/80 dark:border-emerald-950/90 bg-white dark:bg-[#080e0b] py-8">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-500 flex items-center justify-center border border-emerald-500/25">
+                    <i data-lucide="trophy" class="w-4 h-4"></i>
+                </div>
+                <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">AI Soccer Coach — Launchpad Project Platform</span>
+            </div>
+            <div class="flex items-center gap-4 text-xs">
+                <a href="#live-coach" onclick="focusChatInput()" class="inline-flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-300 transition-colors">
+                    <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
+                    <span>Back to Live AI Coach</span>
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification Banner -->
+    <div id="toast-notification" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 transition-all duration-300 transform translate-y-2">
+        <div class="bg-[#111c16] text-white text-xs font-medium px-4 py-2.5 rounded-full shadow-xl border border-emerald-500/40 flex items-center gap-2">
+            <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+            <span id="toast-message">Copied to clipboard</span>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL 1: DRILL & BIOMECHANICS ANALYZER     -->
+    <!-- ========================================== -->
+    <div id="drill-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-fade-in">
+        <div class="bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/80 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden animate-slide-up">
+            <div class="p-4 sm:p-5 border-b border-slate-200 dark:border-emerald-950 flex items-center justify-between bg-slate-50 dark:bg-[#16241d]">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center border border-emerald-500/25">
+                        <i data-lucide="scan-line" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">Drill & Biomechanics Analyzer</h3>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">Simulated Pose Estimation + Regression Diagnostic</p>
+                    </div>
+                </div>
+                <button onclick="closeDrillModal()" class="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-200/50 dark:hover:bg-[#111c16] cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form onsubmit="submitDrillAnalysis(event)" class="p-4 sm:p-5 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">1. Select Skill Drill</label>
+                    <select id="drill-skill-select" class="w-full bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500">
+                        <option value="Power Instep Shot">Power Instep Shot (Laces Strike)</option>
+                        <option value="Inside-of-Foot Precision Pass">Inside-of-Foot Precision Pass</option>
+                        <option value="Step-Over & Cut Dribble">Step-Over & Explosive Cut Dribble</option>
+                        <option value="Aerial Header & Jump Landing">Aerial Header & Single/Double-Leg Landing</option>
+                        <option value="First-Touch Cushion & Turn">First-Touch Cushion & Half-Turn</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">2. Camera Angle</label>
+                        <select id="drill-camera-select" class="w-full bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500">
+                            <option value="45-Degree Front-Side">45° Front-Side</option>
+                            <option value="Pure Side Profile">Pure Side Profile</option>
+                            <option value="Behind / Goal View">Behind / Goal View</option>
+                            <option value="Front-On">Front-On</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">3. Primary Goal</label>
+                        <select id="drill-goal-select" class="w-full bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500">
+                            <option value="Fix Accuracy / Consistency">Fix Accuracy & Form</option>
+                            <option value="Reduce Injury Risk (Knee/Ankle)">Injury Prevention</option>
+                            <option value="Maximize Ball Velocity / Speed">Maximize Power / Speed</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">4. What happened during your reps?</label>
+                    <textarea id="drill-notes-input" rows="3" required placeholder="e.g., My shots keep sailing over the crossbar when I strike on the run, and my plant knee feels slightly unstable..." class="w-full bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 resize-none"></textarea>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeDrillModal()" class="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#16241d] rounded-xl cursor-pointer">
+                        Cancel
+                    </button>
+                    <button type="submit" class="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl shadow-sm transition-all cursor-pointer">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                        <span>Run AI Biomechanics Report</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL 2: LAUNCHPAD PROJECT BLUEPRINT       -->
+    <!-- ========================================== -->
+    <div id="blueprint-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-fade-in">
+        <div class="bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/80 rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up">
+            <div class="p-4 sm:p-5 border-b border-slate-200 dark:border-emerald-950 flex items-center justify-between bg-slate-50 dark:bg-[#16241d]">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center border border-emerald-500/25">
+                        <i data-lucide="layers" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">AI Soccer Coach — Project Blueprint</h3>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">Launchpad Project Team</p>
+                    </div>
+                </div>
+                <button onclick="toggleBlueprintModal(false)" class="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-200/50 dark:hover:bg-[#111c16] cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-5 text-sm">
+                <!-- Problem Statement -->
+                <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25">
+                    <h4 class="text-xs font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold mb-1">Core Problem Statement</h4>
+                    <p class="text-slate-700 dark:text-slate-200 leading-relaxed">
+                        Ambitious youth soccer players training solo often build bad habits, waste practice time, and risk injury because they lack immediate, objective feedback on their skill execution.
+                    </p>
+                </div>
+
+                <!-- 4-Stage AI Pipeline -->
+                <div>
+                    <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold mb-2.5">AI & Computer Vision Pipeline</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
+                            <span class="text-[11px] font-mono text-emerald-500 font-semibold">STAGE 01 • POSE ESTIMATION</span>
+                            <p class="font-semibold text-slate-900 dark:text-white mt-0.5">MediaPipe / YOLOv8-Pose</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Extracts 2D/3D skeletal joint coordinates from standard smartphone practice videos.</p>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
+                            <span class="text-[11px] font-mono text-emerald-500 font-semibold">STAGE 02 • DIMENSIONALITY REDUCTION</span>
+                            <p class="font-semibold text-slate-900 dark:text-white mt-0.5">PCA / Feature Compression</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Streamlines dense frame-by-frame joint trajectories for low-latency mobile inference.</p>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
+                            <span class="text-[11px] font-mono text-emerald-500 font-semibold">STAGE 03 • CLASSIFICATION</span>
+                            <p class="font-semibold text-slate-900 dark:text-white mt-0.5">3D CNNs / Video Transformers</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Identifies the drill move and classifies technique quality (proper vs. improper form).</p>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
+                            <span class="text-[11px] font-mono text-emerald-500 font-semibold">STAGE 04 • REGRESSION</span>
+                            <p class="font-semibold text-slate-900 dark:text-white mt-0.5">Biomechanical Scoring</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Predicts continuous metrics: limb velocity, joint angle accuracy, injury risk & success probability.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Datasets & Ethics -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
+                        <h4 class="text-xs font-mono uppercase text-slate-400 font-bold mb-1.5">Datasets & Benchmarks</h4>
+                        <ul class="text-xs text-slate-600 dark:text-slate-300 space-y-1 list-disc ml-4">
+                            <li><strong>SoccerNet</strong> (match & action benchmarks)</li>
+                            <li><strong>Kinetics-400</strong> (human action pretraining)</li>
+                            <li><strong>Custom Solo Drills</strong> (recorded multi-angle reps)</li>
+                        </ul>
+                    </div>
+                    <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
+                        <h4 class="text-xs font-mono uppercase text-slate-400 font-bold mb-1.5">Ethics & Safety Guardrails</h4>
+                        <ul class="text-xs text-slate-600 dark:text-slate-300 space-y-1 list-disc ml-4">
+                            <li>On-device skeletal processing to protect youth video privacy</li>
+                            <li>Tested across diverse heights, ages & body types</li>
+                            <li>Injury-first biomechanical feedback thresholds</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Current Challenges -->
+                <div class="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <h4 class="text-xs font-mono uppercase text-amber-600 dark:text-amber-400 font-bold mb-1.5">Active Engineering Challenges</h4>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        1) Outdoor lighting, shadows & varied phone tripod angles • 2) Real-time mobile latency without thermal throttling • 3) Delivering concise, hands-free audio cues mid-drill.
+                    </p>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-slate-200 dark:border-emerald-950 flex items-center justify-between bg-slate-50 dark:bg-[#16241d]">
+                <span class="text-xs text-slate-500 dark:text-slate-400">Want help solving one of these challenges?</span>
+                <button onclick="toggleBlueprintModal(false); setAppMode('builder'); scrollToCoachAndSuggest('Help our team design a concrete implementation plan for our MVP prototype using MediaPipe, dimensionality reduction, and a lightweight classifier/regressor on a smartphone.');" class="px-4 py-2 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl cursor-pointer transition-colors">
+                    Brainstorm MVP Plan →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // STATE & CONFIGURATION
+        // ==========================================
+        const apiKey = ""; // Canvas provides the API key automatically at runtime
+        const MODEL_NAME = "gemini-3-flash-preview";
+        const STORAGE_KEY = "ai_soccer_coach_sessions_v1";
+        const THEME_KEY = "ai_soccer_coach_theme";
+
+        let conversations = [];
+        let activeConversationId = null;
+        let currentMode = 'coach'; // 'coach' | 'builder'
+        let isGenerating = false;
+        let confirmClearAll = false;
+        let clearAllTimeout = null;
+
+        // Domain-specific System Prompts
+        const SYSTEM_PROMPTS = {
+            coach: `You are **AI Soccer Coach**, an elite virtual soccer biomechanics coach and computer-vision training assistant created by the Launchpad Project Team.
+Your mission is to help ambitious youth soccer players training solo avoid building bad habits, maximize practice efficiency, and prevent injuries.
+
+When a player describes a drill, miss, or movement issue (or submits a Drill Analyzer report), respond like a real-time AI coaching system backed by Pose Estimation (MediaPipe/YOLOv8-Pose), Action Classification (3D CNN), and Skill Regression:
+1. **Simulated AI Telemetry Snapshot** (include a crisp Markdown table or bullet block with estimated metrics: *Detected Action*, *Form Classification* [Proper / Needs Adjustment / High Injury Risk], *Key Joint Angles* [e.g., Plant Knee Flexion, Torso Lean, Hip Rotation], *Execution Success Probability %*, and *Injury Risk Score* [Low/Moderate/High]).
+2. **Biomechanical Root Cause**: Clearly explain *why* the miss or risk occurs based on body mechanics (plant foot placement, ankle lock, center of gravity, knee valgus, follow-through).
+3. **Actionable Solo Fix & Audio Cue**: Give 2–3 concrete corrective steps and a short 3-word hands-free audio cue they can repeat during their next 10 solo reps.
+4. **Safety Check**: Flag any ACL, ankle, or groin strain risks if relevant.
+
+Keep responses energetic, encouraging, structured, and easy to scan on a phone screen between drills.`,
+
+            builder: `You are the **AI Technical Mentor & Product Partner** for the **Launchpad Project Team**, a high school student team building **AI Soccer Coach** for their Launchpad project.
+
+Here is their exact project context:
+- **Core Problem**: Ambitious youth soccer players training solo build bad habits, waste practice time, and risk injury because they lack immediate, objective feedback on skill execution.
+- **ML/CV Pipeline**:
+  1. *Pose Estimation*: MediaPipe or YOLOv8-pose to extract skeletal keypoints from smartphone video.
+  2. *Dimensionality Reduction*: PCA / feature selection to compress dense frame-by-frame joint data for real-time mobile inference.
+  3. *Action Classification*: 3D CNNs or Video Transformers to classify the skill move (shooting, passing, dribbling, landing) and form quality (proper vs. improper).
+  4. *Skill Regression*: Continuous biomechanical scoring (limb speed, joint angle accuracy, injury risk, execution success probability).
+- **Datasets**: SoccerNet, Kinetics-400, and custom recorded solo drills.
+- **Ethics & Safety**: Privacy-first skeletal processing (not storing raw youth faces/videos unnecessarily), testing across diverse body types/heights/ages, and injury-preventive coaching.
+- **Open Challenges & Needs**: Choosing the right software stack/platforms, backend APIs/SaaS, handling outdoor lighting/camera angles, mobile latency/overheating, and hands-free audio feedback.
+
+Help the Project Team make concrete, achievable engineering, dataset, UX, ethics, and pitch decisions. Give practical, step-by-step recommendations tailored to a student team building a working, judge-ready prototype.`
+        };
+
+        // Mode-Specific Suggested Prompts & Quick Chips
+        const MODE_CONFIG = {
+            coach: {
+                badgeText: "COACH",
+                placeholder: "Describe your solo drill or ask for biomechanics & form feedback...",
+                description: "Simulates real-time pose tracking, biomechanical regression metrics & injury prevention tips.",
+                welcomeHeading: "Train Smarter. Build Zero Bad Habits.",
+                suggestions: [
+                    {
+                        icon: "target",
+                        color: "text-emerald-500",
+                        title: "Analyze Power Shot Form",
+                        desc: "My instep shots keep flying over the crossbar when I strike at full speed.",
+                        prompt: "Analyze my Power Instep Shot form: when I approach at full speed, my shots keep flying high over the crossbar and I lean back at impact."
+                    },
+                    {
+                        icon: "shield-alert",
+                        color: "text-amber-500",
+                        title: "Check Landing Injury Risk",
+                        desc: "Evaluate knee valgus & ACL safety when landing after jumping for headers.",
+                        prompt: "Evaluate my jump and landing mechanics after winning an aerial header. Sometimes my knees cave inward when I land on one foot—what is my injury risk and how do I fix it?"
+                    },
+                    {
+                        icon: "footprints",
+                        color: "text-teal-400",
+                        title: "First-Touch & Turn Drill",
+                        desc: "Give me a 10-minute solo wall-pass drill with key joint angles to watch.",
+                        prompt: "Give me a 10-minute solo wall-pass first-touch drill and tell me what body posture, knee bend, and ankle angles your pose tracker looks for."
+                    },
+                    {
+                        icon: "zap",
+                        color: "text-sky-400",
+                        title: "Step-Over Dribble Speed",
+                        desc: "How do I lower my center of gravity for faster change of direction?",
+                        prompt: "How can I improve my step-over dribble and explosive exit cut? What hip and knee angles maximize acceleration without slipping?"
+                    }
+                ],
+                chips: [
+                    { label: "⚽ Power Shot Over Bar", prompt: "Why do my power shots go over the bar, and what torso/plant-foot angles fix it?" },
+                    { label: "🦵 Knee Landing Safety", prompt: "How do I prevent inward knee collapse (valgus) when landing from jumps?" },
+                    { label: "🎯 Weak-Foot Passing", prompt: "Give me a solo drill to build weak-foot inside passing accuracy and consistency." },
+                    { label: "🎧 3-Word Audio Cues", prompt: "Give me short 3-word audio cues I can use mid-drill for shooting and first touch." }
+                ]
+            },
+            builder: {
+                badgeText: "TEAM",
+                placeholder: "Ask about MediaPipe, 3D CNNs, phone camera setup, ethics, or MVP stack...",
+                description: "Technical & product mentor for the Launchpad Project Team's CV/ML prototype.",
+                welcomeHeading: "Build & Ship Your AI Soccer Coach MVP.",
+                suggestions: [
+                    {
+                        icon: "cpu",
+                        color: "text-emerald-500",
+                        title: "Mobile Stack & Architecture",
+                        desc: "Best software stack & APIs to run MediaPipe + Classification/Regression fast.",
+                        prompt: "We need to decide what software, platforms, and backend APIs to use for our AI Soccer Coach MVP. Compare a mobile web app (MediaPipe JS + TensorFlow.js) vs. React Native/Python backend for low-latency demoing."
+                    },
+                    {
+                        icon: "camera",
+                        color: "text-sky-400",
+                        title: "Solve Camera & Outdoor Angles",
+                        desc: "Handle tripod placement, sunlight glare, and occluded joints on a pitch.",
+                        prompt: "One of our biggest challenges is outdoor lighting, shadows, and inconsistent smartphone camera angles during solo drills. How should we design an on-screen calibration guide and normalize pose keypoints?"
+                    },
+                    {
+                        icon: "volume-2",
+                        color: "text-amber-500",
+                        title: "Hands-Free Audio Feedback",
+                        desc: "Deliver instant voice cues mid-drill without making players look at their screen.",
+                        prompt: "Solo players can't look at their phone screen while dribbling or shooting. Design a hands-free audio coaching feedback loop that triggers only after each rep completes."
+                    },
+                    {
+                        icon: "scale",
+                        color: "text-teal-400",
+                        title: "Expand Ethics & Model Card",
+                        desc: "Strengthen privacy, fairness across youth body types, and injury-safety guardrails.",
+                        prompt: "Help us upgrade our Ethics Check into a strong Launchpad Model Card covering youth video privacy, height/age fairness in joint-angle thresholds, and safe coaching disclaimers."
+                    }
+                ],
+                chips: [
+                    { label: "📱 Tech Stack Choice", prompt: "What is the fastest tech stack for our Project Team to build a working prototype?" },
+                    { label: "📊 Dimensionality Reduction", prompt: "How should we apply Dimensionality Reduction (like PCA) to MediaPipe joint keypoints?" },
+                    { label: "🎥 Custom Dataset Plan", prompt: "How many reps and camera angles should we record for our custom solo drill dataset?" },
+                    { label: "🏆 Judge Demo Script", prompt: "Write a 60-second live demo script showing our prototype working in front of judges." }
+                ]
+            }
+        };
+
+        // DOM Elements
+        const messagesListEl = document.getElementById('messages-list');
+        const emptyStateEl = document.getElementById('empty-state');
+        const loadingIndicatorEl = document.getElementById('loading-indicator');
+        const loadingLabelEl = document.getElementById('loading-label');
+        const chatScrollContainer = document.getElementById('chat-scroll-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const conversationListEl = document.getElementById('conversation-list');
+        const currentChatTitleEl = document.getElementById('current-chat-title');
+        const sidebarEl = document.getElementById('sidebar');
+        const sidebarBackdropEl = document.getElementById('sidebar-backdrop');
+
+        // ==========================================
+        // INITIALIZATION
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            loadConversations();
+            applyModeUI();
+            
+            if (conversations.length === 0) {
+                startNewChat(false);
+            } else {
+                selectConversation(conversations[0].id);
+            }
+
+            lucide.createIcons();
+        });
+
+        // ==========================================
+        // THEME & MODE MANAGEMENT
+        // ==========================================
+        function initTheme() {
+            const savedTheme = localStorage.getItem(THEME_KEY);
+            if (savedTheme === 'light') {
+                document.documentElement.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+            }
+        }
+
+        function toggleDarkMode() {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
+        }
+
+        function setAppMode(mode) {
+            if (currentMode === mode) return;
+            currentMode = mode;
+            applyModeUI();
+            showToast(mode === 'coach' ? 'Switched to Player Coach Mode' : 'Switched to Project Team Mode');
+        }
+
+        function applyModeUI() {
+            const cfg = MODE_CONFIG[currentMode];
+            const coachBtn = document.getElementById('mode-btn-coach');
+            const builderBtn = document.getElementById('mode-btn-builder');
+            const modeDesc = document.getElementById('mode-description');
+            const headerBadge = document.getElementById('header-mode-badge');
+            const welcomeHeading = document.getElementById('welcome-heading');
+
+            if (currentMode === 'coach') {
+                coachBtn.className = "flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-emerald-500 text-slate-950 shadow-xs";
+                builderBtn.className = "flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white";
+                headerBadge.innerHTML = `<i data-lucide="activity" class="w-3 h-3"></i><span>COACH</span>`;
+                loadingLabelEl.textContent = "Analyzing pose & biomechanics...";
+            } else {
+                builderBtn.className = "flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-emerald-500 text-slate-950 shadow-xs";
+                coachBtn.className = "flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white";
+                headerBadge.innerHTML = `<i data-lucide="cpu" class="w-3 h-3"></i><span>TEAM</span>`;
+                loadingLabelEl.textContent = "Consulting ML & Launchpad architecture...";
+            }
+
+            modeDesc.textContent = cfg.description;
+            messageInput.placeholder = cfg.placeholder;
+            welcomeHeading.textContent = cfg.welcomeHeading;
+
+            // Render suggestion cards in empty state
+            const grid = document.getElementById('suggestion-cards-grid');
+            grid.innerHTML = cfg.suggestions.map(s => `
+                <button onclick="useSuggestion('${escapeAttribute(s.prompt)}')" class="p-4 rounded-2xl bg-white dark:bg-[#111c16] border border-slate-200/80 dark:border-emerald-950 hover:border-emerald-500/60 dark:hover:border-emerald-500/50 hover:shadow-md transition-all group cursor-pointer">
+                    <div class="flex items-center gap-2 ${s.color} font-semibold text-sm mb-1">
+                        <i data-lucide="${s.icon}" class="w-4 h-4"></i>
+                        <span>${escapeHtml(s.title)}</span>
+                    </div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">${escapeHtml(s.desc)}</p>
+                </button>
+            `).join('');
+
+            // Render quick chips above input
+            const chipsBar = document.getElementById('quick-chips-bar');
+            chipsBar.innerHTML = cfg.chips.map(c => `
+                <button type="button" onclick="useSuggestion('${escapeAttribute(c.prompt)}')" class="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-full bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950 hover:border-emerald-500/50 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer">
+                    ${escapeHtml(c.label)}
+                </button>
+            `).join('');
+
+            lucide.createIcons();
+        }
+
+        function focusChatInput() {
+            setTimeout(() => {
+                messageInput.focus({ preventScroll: true });
+            }, 350);
+        }
+
+        function scrollToCoachAndSuggest(promptText) {
+            const section = document.getElementById('live-coach');
+            if (section) {
+                section.scrollIntoView({ behavior: 'smooth' });
+            }
+            setTimeout(() => {
+                useSuggestion(promptText);
+            }, 300);
+        }
+
+        // ==========================================
+        // CONVERSATION MANAGEMENT
+        // ==========================================
+        function loadConversations() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    conversations = JSON.parse(raw);
+                }
+            } catch (e) {
+                conversations = [];
+            }
+        }
+
+        function saveConversations() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+            } catch (e) {
+                // Storage quota fallback
+            }
+        }
+
+        function startNewChat(closeMobileSidebar = true) {
+            if (isGenerating) return;
+
+            const current = getActiveConversation();
+            if (current && current.messages.length === 0) {
+                messageInput.focus({ preventScroll: true });
+                if (closeMobileSidebar) closeSidebarOnMobile();
+                return;
+            }
+
+            const newId = 'session_' + Date.now();
+            const newConv = {
+                id: newId,
+                title: currentMode === 'coach' ? 'Solo Training Session' : 'Launchpad Build Session',
+                mode: currentMode,
+                updatedAt: Date.now(),
+                messages: []
+            };
+
+            conversations.unshift(newConv);
+            saveConversations();
+            selectConversation(newId);
+            
+            if (closeMobileSidebar) closeSidebarOnMobile();
+            messageInput.focus({ preventScroll: true });
+        }
+
+        function selectConversation(id) {
+            if (isGenerating) return;
+            activeConversationId = id;
+            const conv = getActiveConversation();
+            if (!conv) return;
+
+            if (conv.mode && conv.mode !== currentMode) {
+                currentMode = conv.mode;
+                applyModeUI();
+            }
+
+            currentChatTitleEl.textContent = conv.title;
+            renderSidebar();
+            renderMessages();
+        }
+
+        function deleteConversation(event, id) {
+            event.stopPropagation();
+            if (isGenerating) return;
+
+            conversations = conversations.filter(c => c.id !== id);
+            saveConversations();
+
+            if (conversations.length === 0) {
+                startNewChat(false);
+            } else if (activeConversationId === id) {
+                selectConversation(conversations[0].id);
+            } else {
+                renderSidebar();
+            }
+            showToast("Chat deleted");
+        }
+
+        function handleClearAllChats(event) {
+            event.stopPropagation();
+            if (isGenerating) return;
+
+            if (!confirmClearAll) {
+                confirmClearAll = true;
+                renderSidebar();
+                clearTimeout(clearAllTimeout);
+                clearAllTimeout = setTimeout(() => {
+                    confirmClearAll = false;
+                    renderSidebar();
+                }, 3500);
+                return;
+            }
+
+            clearTimeout(clearAllTimeout);
+            confirmClearAll = false;
+            conversations = [];
+            saveConversations();
+            startNewChat(false);
+            showToast("All previous chats cleared");
+        }
+
+        function getActiveConversation() {
+            return conversations.find(c => c.id === activeConversationId);
+        }
+
+        // ==========================================
+        // UI RENDERING
+        // ==========================================
+        function renderSidebar() {
+            conversationListEl.innerHTML = '';
+            if (conversations.length === 0) return;
+
+            // Header bar with "Previous Sessions" & two-step "Clear All" button
+            const headerRow = document.createElement('div');
+            headerRow.className = 'flex items-center justify-between px-2 py-1.5 mb-1';
+            headerRow.innerHTML = `
+                <span class="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    Previous Sessions (${conversations.length})
+                </span>
+                <button 
+                    type="button"
+                    onclick="handleClearAllChats(event)" 
+                    title="${confirmClearAll ? 'Click again to permanently delete all chats' : 'Clear all previous chats'}"
+                    class="inline-flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                        confirmClearAll 
+                            ? 'bg-rose-500 text-white shadow-xs animate-pulse' 
+                            : 'text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20'
+                    }"
+                >
+                    <i data-lucide="${confirmClearAll ? 'alert-triangle' : 'trash-2'}" class="w-3 h-3"></i>
+                    <span>${confirmClearAll ? 'Confirm Clear?' : 'Clear All'}</span>
+                </button>
+            `;
+            conversationListEl.appendChild(headerRow);
+
+            conversations.forEach(conv => {
+                const isActive = conv.id === activeConversationId;
+                const item = document.createElement('div');
+                item.onclick = () => {
+                    selectConversation(conv.id);
+                    closeSidebarOnMobile();
+                };
+
+                const iconName = conv.mode === 'builder' ? 'cpu' : 'activity';
+
+                item.className = `group flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs sm:text-sm cursor-pointer transition-all ${
+                    isActive 
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-medium border border-emerald-500/30' 
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#16241d] hover:text-slate-900 dark:hover:text-white border border-transparent'
+                }`;
+
+                item.innerHTML = `
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                        <i data-lucide="${iconName}" class="w-3.5 h-3.5 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400'}"></i>
+                        <span class="truncate">${escapeHtml(conv.title)}</span>
+                    </div>
+                    <button 
+                        type="button"
+                        onclick="deleteConversation(event, '${conv.id}')" 
+                        title="Delete chat" 
+                        aria-label="Delete chat: ${escapeAttribute(conv.title)}"
+                        class="shrink-0 p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 rounded-lg transition-colors cursor-pointer"
+                    >
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                `;
+                conversationListEl.appendChild(item);
+            });
+
+            lucide.createIcons();
+        }
+
+        function renderMessages() {
+            const conv = getActiveConversation();
+            messagesListEl.innerHTML = '';
+
+            if (!conv || conv.messages.length === 0) {
+                emptyStateEl.classList.remove('hidden');
+                return;
+            }
+
+            emptyStateEl.classList.add('hidden');
+            conv.messages.forEach(msg => {
+                appendMessageBubble(msg.role, msg.text, false);
+            });
+            scrollToBottom();
+        }
+
+        function appendMessageBubble(role, text, animate = true) {
+            emptyStateEl.classList.add('hidden');
+
+            const wrapper = document.createElement('div');
+            const isUser = role === 'user';
+
+            wrapper.className = `flex w-full ${isUser ? 'justify-end' : 'justify-start'} ${animate ? 'animate-slide-up' : ''}`;
+
+            if (isUser) {
+                wrapper.innerHTML = `
+                    <div class="max-w-[85%] sm:max-w-[75%] bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-medium rounded-2xl rounded-tr-sm px-4 py-3 shadow-xs text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(text)}</div>
+                `;
+            } else {
+                const rawHtml = marked.parse(text);
+                const cleanHtml = DOMPurify.sanitize(rawHtml);
+
+                wrapper.innerHTML = `
+                    <div class="flex items-start gap-3 sm:gap-3.5 max-w-[94%] sm:max-w-[88%] group">
+                        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 shrink-0 mt-0.5 shadow-xs">
+                            <i data-lucide="shield-check" class="w-4 h-4 stroke-[2.2]"></i>
+                        </div>
+                        <div class="flex-1 min-w-0 space-y-1.5">
+                            <div class="bg-white dark:bg-[#111c16] border border-slate-200/90 dark:border-emerald-950 rounded-2xl rounded-tl-sm px-4 py-3.5 shadow-xs text-sm sm:text-base text-slate-800 dark:text-slate-100 prose-chat break-words">
+                                ${cleanHtml}
+                            </div>
+                            <div class="flex items-center gap-2 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onclick="copyMessageText(this)" data-text="${escapeAttribute(text)}" class="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-emerald-500 py-0.5 px-1.5 rounded-md hover:bg-slate-200/50 dark:hover:bg-[#16241d] transition-colors cursor-pointer">
+                                    <i data-lucide="copy" class="w-3 h-3"></i>
+                                    <span>Copy Feedback</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            messagesListEl.appendChild(wrapper);
+            lucide.createIcons();
+            scrollToBottom();
+        }
+
+        // ==========================================
+        // MODALS (DRILL ANALYZER & BLUEPRINT)
+        // ==========================================
+        function openDrillModal() {
+            const modal = document.getElementById('drill-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.getElementById('drill-notes-input').focus();
+        }
+
+        function closeDrillModal() {
+            const modal = document.getElementById('drill-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function submitDrillAnalysis(event) {
+            event.preventDefault();
+            const skill = document.getElementById('drill-skill-select').value;
+            const camera = document.getElementById('drill-camera-select').value;
+            const goal = document.getElementById('drill-goal-select').value;
+            const notes = document.getElementById('drill-notes-input').value.trim();
+
+            if (!notes) return;
+
+            closeDrillModal();
+            document.getElementById('drill-notes-input').value = '';
+
+            if (currentMode !== 'coach') {
+                setAppMode('coach');
+            }
+
+            const structuredPrompt = `[DRILL & BIOMECHANICS SCAN REQUEST]
+• Skill Move: ${skill}
+• Camera Perspective: ${camera}
+• Training Goal: ${goal}
+• Player Observation: "${notes}"
+
+Please run a full AI Soccer Coach biomechanical evaluation (Pose Estimation keypoints, Action Classification, Regression metrics, root cause fix, and a 3-word audio cue).`;
+
+            scrollToCoachAndSuggest(structuredPrompt);
+        }
+
+        function toggleBlueprintModal(show) {
+            const modal = document.getElementById('blueprint-modal');
+            if (show) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            } else {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        // ==========================================
+        // INPUT & MESSAGING HANDLERS
+        // ==========================================
+        function autoResizeTextarea(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 144) + 'px';
+            updateSendButtonState();
+        }
+
+        function updateSendButtonState() {
+            const hasText = messageInput.value.trim().length > 0;
+            sendButton.disabled = !hasText || isGenerating;
+        }
+
+        function handleTextareaKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (!sendButton.disabled) {
+                    handleFormSubmit(event);
+                }
+            }
+        }
+
+        function useSuggestion(promptText) {
+            messageInput.value = promptText;
+            autoResizeTextarea(messageInput);
+            handleFormSubmit(new Event('submit'));
+        }
+
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            const text = messageInput.value.trim();
+            if (!text || isGenerating) return;
+
+            const conv = getActiveConversation();
+            if (!conv) return;
+
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            isGenerating = true;
+            updateSendButtonState();
+
+            if (conv.messages.length === 0) {
+                const cleanTitle = text.replace('[DRILL & BIOMECHANICS SCAN REQUEST]', '').trim();
+                conv.title = cleanTitle.length > 36 ? cleanTitle.substring(0, 36) + '...' : cleanTitle;
+                conv.mode = currentMode;
+                currentChatTitleEl.textContent = conv.title;
+            }
+
+            conv.messages.push({ role: 'user', text });
+            conv.updatedAt = Date.now();
+            
+            conversations = [conv, ...conversations.filter(c => c.id !== conv.id)];
+            saveConversations();
+            renderSidebar();
+
+            appendMessageBubble('user', text, true);
+
+            loadingIndicatorEl.classList.remove('hidden');
+            scrollToBottom();
+
+            try {
+                const replyText = await callGeminiAPI(conv.messages);
+                loadingIndicatorEl.classList.add('hidden');
+                conv.messages.push({ role: 'model', text: replyText });
+                conv.updatedAt = Date.now();
+                saveConversations();
+
+                appendMessageBubble('model', replyText, true);
+            } catch (error) {
+                loadingIndicatorEl.classList.add('hidden');
+                const errorMsg = "I'm having trouble connecting to the AI Soccer Coach engine right now. Please try sending your message again.";
+                appendMessageBubble('model', errorMsg, true);
+            } finally {
+                isGenerating = false;
+                updateSendButtonState();
+                messageInput.focus({ preventScroll: true });
+            }
+        }
+
+        // ==========================================
+        // GEMINI API INTEGRATION (WITH EXPONENTIAL BACKOFF)
+        // ==========================================
+        async function callGeminiAPI(messageHistory) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
+
+            const contents = messageHistory.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.text }]
+            }));
+
+            const payload = {
+                contents: contents,
+                systemInstruction: {
+                    parts: [{
+                        text: SYSTEM_PROMPTS[currentMode]
+                    }]
+                }
+            };
+
+            const maxRetries = 4;
+            const delays = [1000, 2000, 4000, 8000];
+
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+                    const text = candidate?.content?.parts?.[0]?.text;
+
+                    if (text) {
+                        return text;
+                    } else {
+                        throw new Error("Empty response from model");
+                    }
+                } catch (err) {
+                    if (attempt === maxRetries) {
+                        throw err;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+                }
+            }
+        }
+
+        // ==========================================
+        // UTILITIES & INTERACTIONS
+        // ==========================================
+        function scrollToBottom() {
+            requestAnimationFrame(() => {
+                chatScrollContainer.scrollTop = chatScrollContainer.scrollHeight;
+            });
+        }
+
+        function toggleSidebar() {
+            const isClosed = sidebarEl.classList.contains('-translate-x-full');
+            if (isClosed) {
+                sidebarEl.classList.remove('-translate-x-full');
+                sidebarBackdropEl.classList.remove('hidden');
+            } else {
+                sidebarEl.classList.add('-translate-x-full');
+                sidebarBackdropEl.classList.add('hidden');
+            }
+        }
+
+        function closeSidebarOnMobile() {
+            if (window.innerWidth < 1024) {
+                sidebarEl.classList.add('-translate-x-full');
+                sidebarBackdropEl.classList.add('hidden');
+            }
+        }
+
+        function copyMessageText(buttonEl) {
+            const textToCopy = buttonEl.getAttribute('data-text');
+            const textarea = document.createElement('textarea');
+            textarea.value = textToCopy;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                showToast("Coaching feedback copied");
+            } catch (err) {
+                showToast("Unable to copy text");
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+
+        let toastTimeout;
+        function showToast(message) {
+            const toast = document.getElementById('toast-notification');
+            const toastMsg = document.getElementById('toast-message');
+            toastMsg.textContent = message;
+
+            toast.classList.remove('opacity-0', 'translate-y-2');
+            toast.classList.add('opacity-100', 'translate-y-0');
+
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'translate-y-2');
+            }, 2200);
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function escapeAttribute(str) {
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+    </script>
+</body>
+</html>
