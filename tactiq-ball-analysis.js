@@ -16,6 +16,20 @@ const stage = document.getElementById("tactiq-camera-stage");
 const S = { detector: null, loading: false, frame: 0, lastVT: -1, ball: null, trail: [], lastSeen: 0,
   nearInfo: null, lastKick: 0, kicks: [], seen: 0, tried: 0, auto: true, voice: true };
 
+try { S.heightCm = parseFloat(localStorage.getItem("tactiq_height_cm")) || null; } catch { S.heightCm = null; }
+
+// ---------- speed calibration ----------
+// Shoulder-to-hip distance is roughly 28.8% of standing height, so the player's height turns
+// "torso-lengths per second" into approximate metres per second.
+const M_PER_TORSO = 0.288;
+const toMps = (t) => (S.heightCm ? t * (S.heightCm / 100) * M_PER_TORSO : null);
+const speedShort = (t) => { const m = toMps(t); return m == null ? t.toFixed(1) : m.toFixed(1) + " m/s"; };
+const speedLong = (t) => {
+  const m = toMps(t);
+  return m == null ? `${t.toFixed(1)} torso-lengths/s (relative; enter your height to calibrate)`
+                   : `${m.toFixed(1)} m/s (about ${Math.round(m * 3.6)} km/h)`;
+};
+
 // ---------- UI ----------
 const overlay = document.createElement("canvas");
 overlay.className = "absolute inset-0 w-full h-full pointer-events-none";
@@ -35,6 +49,11 @@ panel.innerHTML = `
     <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2"><div class="text-[9px] text-slate-400">Last speed</div><div id="tq-speed" class="text-base font-mono font-bold text-[#00f59b]">--</div></div>
     <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2"><div class="text-[9px] text-slate-400">Ball seen</div><div id="tq-rate" class="text-base font-mono font-bold text-[#00f59b]">--%</div></div>
   </div>
+  <div class="flex items-center gap-2">
+    <label for="tq-height" class="text-[10px] text-slate-500 dark:text-slate-400 shrink-0">Your height (cm)</label>
+    <input id="tq-height" type="number" min="100" max="230" step="1" placeholder="e.g. 170" class="w-20 text-[11px] rounded-md px-2 py-1 bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500">
+    <span id="tq-cal-status" class="text-[9px] font-mono text-amber-500">UNCALIBRATED</span>
+  </div>
   <p id="tq-last" class="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">Start the camera, keep your full body and the ball in frame, then strike the ball. Each kick is analyzed automatically.</p>
   <div class="flex flex-wrap gap-2">
     <label class="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-1"><input id="tq-auto" type="checkbox" checked> Post feedback to chat</label>
@@ -42,12 +61,28 @@ panel.innerHTML = `
     <button id="tq-report" type="button" class="text-[10px] font-semibold rounded-lg px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">Session report</button>
     <button id="tq-reset" type="button" class="text-[10px] font-semibold rounded-lg px-3 py-1.5 bg-slate-100 dark:bg-[#16241d] border border-slate-200 dark:border-emerald-950 text-slate-600 dark:text-slate-300">Reset</button>
   </div>
-  <p class="text-[9px] text-slate-400 leading-relaxed">Ball detection uses a general object model (“sports ball”), so it can miss or confuse round objects. Speeds are 2D estimates relative to your torso length, not km/h.</p>`;
+  <p class="text-[9px] text-slate-400 leading-relaxed">Ball detection uses a general object model (“sports ball”), so it can miss or confuse round objects. Enter your height to convert speed to approximate m/s. Speeds are 2D estimates measured across the camera view, so kicks toward or away from the camera read low.</p>`;
 document.getElementById("tactiq-live-observation").parentElement.insertAdjacentElement("afterend", panel);
 const $ = (id) => document.getElementById(id);
 $("tq-auto").onchange = (e) => (S.auto = e.target.checked);
 $("tq-voice").onchange = (e) => (S.voice = e.target.checked);
 $("tq-reset").onclick = resetSession;
+function refreshCalibrationUI() {
+  const cal = !!S.heightCm;
+  $("tq-cal-status").textContent = cal ? "CALIBRATED" : "UNCALIBRATED";
+  $("tq-cal-status").className = "text-[9px] font-mono " + (cal ? "text-emerald-500" : "text-amber-500");
+  const last = S.kicks[S.kicks.length - 1];
+  if (last) $("tq-speed").textContent = speedShort(last.speed);
+}
+$("tq-height").value = S.heightCm || "";
+$("tq-height").onchange = (e) => {
+  const v = parseFloat(e.target.value);
+  S.heightCm = v >= 100 && v <= 230 ? v : null;
+  if (!S.heightCm) e.target.value = "";
+  try { S.heightCm ? localStorage.setItem("tactiq_height_cm", String(S.heightCm)) : localStorage.removeItem("tactiq_height_cm"); } catch {}
+  refreshCalibrationUI();
+};
+refreshCalibrationUI();
 $("tq-report").onclick = () => postToChat(sessionReport());
 
 function setStatus(text, kind) {
@@ -164,11 +199,11 @@ function analyzeKick(k) {
 function registerKick(k) {
   const r = analyzeKick(k); k.result = r; S.kicks.push(k);
   $("tq-kicks").textContent = S.kicks.length;
-  $("tq-speed").textContent = k.speed.toFixed(1);
+  $("tq-speed").textContent = speedShort(k.speed);
   $("tq-last").textContent = `Kick #${S.kicks.length} (${k.foot} foot). ${r.notes.join(" ")}`;
   const md = `## Kick #${S.kicks.length} — ${k.foot} foot
 
-**Ball speed (relative):** ${k.speed.toFixed(1)} torso-lengths/s  
+**Ball speed:** ${speedLong(k.speed)}  
 **Plant knee:** ${r.plantKnee ?? "n/a"}° · **Kicking knee:** ${r.kickKnee ?? "n/a"}° · **Torso lean:** ${r.lean == null ? "n/a" : Math.abs(r.lean)}°
 
 ${r.notes.map((n) => "- " + n).join("\n")}
@@ -193,8 +228,8 @@ function sessionReport() {
 | Metric | Value |
 |---|---:|
 | Kicks detected | ${n} (L ${l} / R ${rt}) |
-| Average ball speed | ${avg(sp).toFixed(1)} torso-lengths/s |
-| Fastest | ${Math.max(...sp).toFixed(1)} |
+| Average ball speed | ${speedLong(avg(sp))} |
+| Fastest | ${speedLong(Math.max(...sp))} |
 | Average plant knee | ${pk.length ? Math.round(avg(pk)) + "°" : "n/a"} |
 | Ball detected in frames | ${S.tried ? Math.round((S.seen / S.tried) * 100) : 0}% |
 
