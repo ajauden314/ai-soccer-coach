@@ -8,23 +8,23 @@ const MODEL = "https://storage.googleapis.com/mediapipe-models/object_detector/e
 const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 
 const CFG = {
-  minScore: 0.35,
-  acquireScore: 0.66,
-  strongScore: 0.88,
-  trackScore: 0.45,
-  minCoverage: 0.52,
-  edgeThreshold: 14,
-  maxEdges: 5500,
-  scanWidth: 320,
+  minScore: 0.55,
+  acquireScore: 0.76,
+  strongScore: 0.92,
+  trackScore: 0.62,
+  minCoverage: 0.68,
+  edgeThreshold: 17,
+  maxEdges: 4500,
+  scanWidth: 400,
   minRadius: 5,
   maxRadius: 46,
   nearTorso: 0.8,
   kickSpeed: 2.2,
   cooldown: 1200,
-  lostTime: 850,
+  lostTime: 650,
   maxTrail: 16,
-  predictionWindow: 0.3,
-  maxCandidates: 6
+  predictionWindow: 0.22,
+  maxCandidates: 4
 };
 
 const video = document.getElementById("tactiq-camera-video");
@@ -720,6 +720,12 @@ function houghCircles(gray, W, H, rMin, rMax, avoid) {
 
     if (coverage < CFG.minCoverage) continue;
 
+    // Reject weak or incomplete circular outlines.
+    if (c.q < 0.35) continue;
+
+    // Require enough edge evidence around the candidate.
+    if (hits < 17) continue;
+
     const vote = Math.min(1, c.q);
 
     const score = 0.4 * vote + 0.6 * coverage;
@@ -940,22 +946,28 @@ async function ensureDetector() {
 }
 
 function runDetector(now, body) {
-  if (!S.detector) return null;
+  if (!S.detector) return [];
 
   try {
     const result = S.detector.detectForVideo(video, now);
 
-    let best = null;
+    const candidates = [];
 
     for (const detection of result.detections || []) {
       const bb = detection.boundingBox;
-      const score = detection.categories?.[0]?.score ?? 0;
+      const category = detection.categories?.[0];
+      const score = category?.score ?? 0;
 
       if (!bb || score < CFG.minScore) continue;
 
+      // Only accept the model's sports-ball category.
+      if (
+        category?.categoryName?.toLowerCase() !== "sports ball"
+      ) continue;
+
       const ratio = bb.width / bb.height;
 
-      if (ratio < 0.6 || ratio > 1.67) continue;
+      if (ratio < 0.75 || ratio > 1.33) continue;
 
       const candidate = {
         x: bb.originX + bb.width / 2,
@@ -966,15 +978,13 @@ function runDetector(now, body) {
 
       if (inAvoid(candidate.x, candidate.y, body)) continue;
 
-      if (!best || score > best.score) {
-        best = candidate;
-      }
+      candidates.push(candidate);
     }
 
-    return best;
+    return candidates;
   } catch (error) {
-    console.warn("MediaPipe frame detection failed.", error);
-    return null;
+    console.warn("MediaPipe frame detection failed:", error);
+    return [];
   }
 }
 
@@ -985,16 +995,30 @@ function runDetector(now, body) {
 function pickBest(candidates, reference, gate) {
   let best = null;
 
-  for (const c of candidates) {
-    const d = reference ? dist(c, reference) : 0;
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate.x) ||
+        !Number.isFinite(candidate.y)) {
+      continue;
+    }
 
-    if (reference && d > gate) continue;
+    const distance = reference
+      ? dist(candidate, reference)
+      : 0;
 
-    const adjusted =
-      c.score - (reference ? 0.15 * d / gate : 0);
+    if (reference && distance > gate) continue;
 
-    if (!best || adjusted > best.adjusted) {
-      best = { ...c, adjusted };
+    const distancePenalty = reference
+      ? 0.25 * distance / Math.max(1, gate)
+      : 0;
+
+    const score =
+      candidate.score - distancePenalty;
+
+    if (!best || score > best.adjusted) {
+      best = {
+        ...candidate,
+        adjusted: score
+      };
     }
   }
 
@@ -1118,16 +1142,16 @@ function detectBall(now) {
     };
 
     gate =
-      tr.r * 3 +
-      Math.hypot(tr.vx, tr.vy) * dt * 0.7 +
-      tr.r * 0.8 * tr.miss + 12;
+      tr.r * 2.5 +
+      Math.hypot(tr.vx, tr.vy) * dt * 0.6 +
+      tr.r * 0.5 * tr.miss + 10;
   }
 
   // First search around the predicted ball location.
   if (tr) {
     const roi = searchRoi(tr, prediction, gate, body);
 
-    let hit = pickBest(roi, prediction, gate);
+    const hit = pickBest(roi, prediction, gate);
 
     if (hit && hit.score >= CFG.trackScore) {
       registerHit(hit, now);
@@ -1135,43 +1159,49 @@ function detectBall(now) {
     }
   }
 
-  // Search the whole camera image when necessary.
+  // Search the entire camera image.
   const global = searchGlobal(body);
 
-  let aiBall = null;
+  // Run AI detection more frequently.
+  const aiCandidates =
+    S.detector && S.tried % 3 === 0
+      ? runDetector(now, body)
+      : [];
 
-  // Run the heavier model less frequently.
-  if (
-    S.detector &&
-    (!tr || tr.miss > 0 || S.tried % 5 === 0)
-  ) {
-    aiBall = runDetector(now, body);
-  }
+  // AI detections must agree with visual shape detection.
+  // AI alone is not allowed to introduce a new ball.
+  for (const ai of aiCandidates) {
+    for (const shape of global) {
+      const distance = dist(ai, shape);
 
-  // Fuse shape detection and AI detection.
-  if (aiBall) {
-    let matched = false;
+      const tolerance = Math.max(
+        ai.r,
+        shape.r
+      ) * 0.8;
 
-    for (const c of global) {
-      if (dist(c, aiBall) < Math.max(c.r, aiBall.r) * 1.2) {
-        c.score = Math.min(1, c.score + 0.2);
-        matched = true;
+      if (distance <= tolerance) {
+        shape.score = Math.min(
+          1,
+          shape.score + ai.score * 0.12
+        );
+
+        shape.aiConfirmed = true;
       }
-    }
-
-    if (!matched && aiBall.score >= 0.5) {
-      global.push({
-        ...aiBall,
-        score: aiBall.score * 0.9
-      });
     }
   }
 
   // Recover a lost ball using the predicted trajectory.
   if (tr) {
-    const nearby = pickBest(global, prediction, gate * 2);
+    const nearby = pickBest(
+      global,
+      prediction,
+      gate * 1.5
+    );
 
-    if (nearby && nearby.score >= CFG.trackScore) {
+    if (
+      nearby &&
+      nearby.score >= CFG.trackScore
+    ) {
       registerHit(nearby, now);
       return;
     }
@@ -1180,26 +1210,29 @@ function detectBall(now) {
   // Require repeated evidence before acquiring a new ball.
   let acquisition = null;
 
-  for (const c of global) {
+  for (const candidate of global) {
+    if (candidate.score < CFG.acquireScore) continue;
+
     if (
-      c.score >= CFG.acquireScore &&
-      (!acquisition || c.score > acquisition.score)
+      !acquisition ||
+      candidate.score > acquisition.score
     ) {
-      acquisition = c;
+      acquisition = candidate;
     }
   }
 
   if (acquisition) {
-    const p = S.pending;
+    const previous = S.pending;
+
+    const repeated =
+      previous &&
+      now - previous.t < 600 &&
+      dist(acquisition, previous) <
+        Math.max(previous.r * 1.8, 18);
 
     const confirmed =
       acquisition.score >= CFG.strongScore ||
-      (
-        p &&
-        now - p.t < 700 &&
-        dist(acquisition, p) <
-          Math.max(p.r * 2.5, 24)
-      );
+      repeated;
 
     if (confirmed) {
       registerHit(acquisition, now, !!tr);
@@ -1210,6 +1243,8 @@ function detectBall(now) {
       ...acquisition,
       t: now
     };
+  } else {
+    S.pending = null;
   }
 
   registerMiss(now);
