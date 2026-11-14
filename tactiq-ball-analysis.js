@@ -1,139 +1,295 @@
-// TACTIQ add-on: browser-side ball detection + kick/rep analysis + automatic feedback.
-// Needs the existing page (video #tactiq-camera-video, window.tactiqPoseMeasurements,
-// window.tactiqLandmarks, and the chat helpers appendMessageBubble / getActiveConversation).
-//
-// Ball detection works two ways:
-//   1) SHAPE DETECTOR (always on): finds round outlines in the video using edge detection and a
-//      circle Hough transform. It looks only at brightness edges, never at colour, so a ball of
-//      ANY colour or pattern is found as long as its outline is round and reasonably visible.
-//   2) MediaPipe "sports ball" object detector (optional extra): used when it finds a ball.
-// Whichever ball is found gets a YELLOW outline on the camera view.
-import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+import {
+  ObjectDetector,
+  FilesetResolver
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 const MODEL = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite";
 const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
-const MIN_SCORE = 0.3;      // ball confidence threshold (object detector)
-const NEAR_TORSOS = 0.8;    // ball counts as "at the foot" within this many torso lengths
-const KICK_SPEED = 2.2;     // torso-lengths/second needed to count as a strike
-const COOLDOWN_MS = 1200;
-const LOST_MS = 700;
 
-// ---------- shape (round object) detector settings ----------
-const SCAN_W = 200;         // video is downscaled to this width for shape detection
-const R_MIN = 4;            // smallest ball radius searched (scan pixels)
-const R_MAX = 38;           // largest ball radius searched (scan pixels)
-const EDGE_MIN = 14;        // minimum edge strength (0-255 brightness steps)
-const SHAPE_MIN = 0.45;     // how complete the circle outline must be (0-1)
+const CFG = {
+  minScore: 0.35,
+  acquireScore: 0.66,
+  strongScore: 0.88,
+  trackScore: 0.45,
+  minCoverage: 0.52,
+  edgeThreshold: 14,
+  maxEdges: 5500,
+  scanWidth: 320,
+  minRadius: 5,
+  maxRadius: 46,
+  nearTorso: 0.8,
+  kickSpeed: 2.2,
+  cooldown: 1200,
+  lostTime: 850,
+  maxTrail: 16,
+  predictionWindow: 0.3,
+  maxCandidates: 6
+};
 
 const video = document.getElementById("tactiq-camera-video");
 const stage = document.getElementById("tactiq-camera-stage");
-const S = { detector: null, loading: false, failed: false, frame: 0, lastVT: -1, ball: null, trail: [], lastSeen: 0,
-  nearInfo: null, lastKick: 0, kicks: [], seen: 0, tried: 0, auto: true, voice: true, heightUnit: "cm" };
 
-try { S.heightCm = parseFloat(localStorage.getItem("tactiq_height_cm")) || null; } catch { S.heightCm = null; }
-try { S.heightUnit = localStorage.getItem("tactiq_height_unit") === "ftin" ? "ftin" : "cm"; } catch { S.heightUnit = "cm"; }
+if (!video || !stage) {
+  throw new Error("TACTIQ: Camera video or camera stage was not found.");
+}
 
-// ---------- speed calibration ----------
-// Shoulder-to-hip distance is roughly 28.8% of standing height, so the player's height turns
-// "torso-lengths per second" into approximate metres per second, then miles/hour and km/hour.
+const S = {
+  detector: null,
+  loading: false,
+  failed: false,
+
+  ball: null,
+  track: null,
+  pending: null,
+  trail: [],
+  lastSeen: 0,
+
+  lastVT: -1,
+  lastDetect: 0,
+  minInterval: 33,
+
+  nearInfo: null,
+  lastKick: 0,
+  kicks: [],
+
+  seen: 0,
+  tried: 0,
+
+  auto: true,
+  voice: true,
+
+  heightCm: null,
+  heightUnit: "cm",
+
+  previousBallSpeed: 0,
+  previousBallTime: 0
+};
+
+// --------------------------------------------------
+// STORAGE
+// --------------------------------------------------
+
+try {
+  S.heightCm = parseFloat(localStorage.getItem("tactiq_height_cm")) || null;
+  S.heightUnit = localStorage.getItem("tactiq_height_unit") === "ftin"
+    ? "ftin"
+    : "cm";
+} catch {}
+
+// --------------------------------------------------
+// CALIBRATION
+// --------------------------------------------------
+
 const M_PER_TORSO = 0.288;
 const MPS_TO_MPH = 2.236936;
 const MPS_TO_KMH = 3.6;
-const toMps = (t) => (S.heightCm ? t * (S.heightCm / 100) * M_PER_TORSO : null);
-const toMph = (t) => { const m = toMps(t); return m == null ? null : m * MPS_TO_MPH; };
-const toKmh = (t) => { const m = toMps(t); return m == null ? null : m * MPS_TO_KMH; };
-const speedShort = (t) => { const v = toMph(t); return v == null ? t.toFixed(1) : Math.round(v) + " mph"; };
-const speedLong = (t) => {
-  const mph = toMph(t), kmh = toKmh(t);
-  return mph == null ? `${t.toFixed(1)} torso-lengths/s (relative; enter your height to calibrate)`
-                     : `${mph.toFixed(1)} mph (${kmh.toFixed(1)} km/h)`;
+
+const toMps = t =>
+  S.heightCm ? t * (S.heightCm / 100) * M_PER_TORSO : null;
+
+const toMph = t => {
+  const v = toMps(t);
+  return v == null ? null : v * MPS_TO_MPH;
 };
 
-// ---------- UI ----------
+const toKmh = t => {
+  const v = toMps(t);
+  return v == null ? null : v * MPS_TO_KMH;
+};
+
+const speedLong = t => {
+  const mph = toMph(t);
+  const kmh = toKmh(t);
+
+  return mph == null
+    ? `${t.toFixed(1)} torso-lengths/s (uncalibrated)`
+    : `${mph.toFixed(1)} mph (${kmh.toFixed(1)} km/h)`;
+};
+
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+const clamp = (v, min, max) =>
+  Math.max(min, Math.min(max, v));
+
+// --------------------------------------------------
+// UI
+// --------------------------------------------------
+
 const overlay = document.createElement("canvas");
-overlay.className = "absolute inset-0 w-full h-full pointer-events-none";
+overlay.className =
+  "absolute inset-0 w-full h-full pointer-events-none";
 overlay.style.transform = "scaleX(-1)";
 stage.appendChild(overlay);
+
 const octx = overlay.getContext("2d");
 
 const panel = document.createElement("div");
-panel.className = "mt-3 rounded-xl border border-emerald-900/40 bg-emerald-500/5 p-3 space-y-2";
+
+panel.className =
+  "mt-3 rounded-xl border border-emerald-900/40 bg-emerald-500/5 p-3 space-y-2";
+
 panel.innerHTML = `
-  <div class="flex items-center justify-between">
-    <span class="text-[10px] font-bold text-emerald-500">BALL &amp; KICK ANALYSIS</span>
-    <span id="tq-ball-status" class="text-[9px] font-mono px-2 py-0.5 rounded-md border border-slate-500/25 bg-slate-500/10 text-slate-500">IDLE</span>
+<div class="flex items-center justify-between">
+  <span class="text-[10px] font-bold text-emerald-500">
+    BALL &amp; KICK ANALYSIS
+  </span>
+  <span id="tq-ball-status"
+    class="text-[9px] font-mono px-2 py-0.5 rounded-md border">
+    IDLE
+  </span>
+</div>
+
+<div class="grid grid-cols-4 gap-2 text-center">
+
+  <div class="rounded-lg bg-[#111c16] p-2">
+    <div class="text-[9px] text-slate-400">Kicks</div>
+    <div id="tq-kicks"
+      class="text-base font-mono font-bold text-[#00f59b]">0</div>
   </div>
-  <div class="grid grid-cols-4 gap-2 text-center">
-    <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2"><div class="text-[9px] text-slate-400">Kicks</div><div id="tq-kicks" class="text-base font-mono font-bold text-[#00f59b]">0</div></div>
-    <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2"><div class="text-[9px] text-slate-400">Last speed</div><div class="flex items-baseline justify-center gap-1"><span id="tq-mph" class="text-base font-mono font-bold text-[#00f59b]">--</span><span class="text-[9px] text-slate-400">mph</span></div></div>
-    <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2"><div class="text-[9px] text-slate-400">Last speed</div><div class="flex items-baseline justify-center gap-1"><span id="tq-kmh" class="text-base font-mono font-bold text-[#00f59b]">--</span><span class="text-[9px] text-slate-400">km/h</span></div></div>
-    <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2"><div class="text-[9px] text-slate-400">Ball seen</div><div id="tq-rate" class="text-base font-mono font-bold text-[#00f59b]">--%</div></div>
+
+  <div class="rounded-lg bg-[#111c16] p-2">
+    <div class="text-[9px] text-slate-400">MPH</div>
+    <div id="tq-mph"
+      class="text-base font-mono font-bold text-[#00f59b]">--</div>
   </div>
-  <div class="flex flex-wrap items-center gap-2">
-    <label for="tq-height" class="text-[10px] text-slate-500 dark:text-slate-400 shrink-0">Your height</label>
-    <input id="tq-height" type="number" min="100" max="230" step="1" placeholder="170" class="w-16 text-[11px] rounded-md px-2 py-1 bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500">
-    <input id="tq-height-in" type="number" min="0" max="11" step="1" placeholder="in" class="hidden w-14 text-[11px] rounded-md px-2 py-1 bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500">
-    <select id="tq-height-unit" class="text-[11px] rounded-md px-1.5 py-1 bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-900/70 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500">
-      <option value="cm">cm</option>
-      <option value="ftin">ft / in</option>
-    </select>
-    <span id="tq-cal-status" class="text-[9px] font-mono text-amber-500">UNCALIBRATED</span>
+
+  <div class="rounded-lg bg-[#111c16] p-2">
+    <div class="text-[9px] text-slate-400">KM/H</div>
+    <div id="tq-kmh"
+      class="text-base font-mono font-bold text-[#00f59b]">--</div>
   </div>
-  <p id="tq-last" class="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">Start the camera, keep your full body and the ball in frame, then strike the ball. A yellow ring shows when the ball is detected, and each kick is analyzed automatically.</p>
-  <div class="flex flex-wrap gap-2">
-    <label class="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-1"><input id="tq-auto" type="checkbox" checked> Post feedback to chat</label>
-    <label class="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-1"><input id="tq-voice" type="checkbox" checked> Speak cue</label>
-    <button id="tq-report" type="button" class="text-[10px] font-semibold rounded-lg px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">Session report</button>
-    <button id="tq-reset" type="button" class="text-[10px] font-semibold rounded-lg px-3 py-1.5 bg-slate-100 dark:bg-[#16241d] border border-slate-200 dark:border-emerald-950 text-slate-600 dark:text-slate-300">Reset</button>
+
+  <div class="rounded-lg bg-[#111c16] p-2">
+    <div class="text-[9px] text-slate-400">Ball seen</div>
+    <div id="tq-rate"
+      class="text-base font-mono font-bold text-[#00f59b]">--%</div>
   </div>
-  <p class="text-[9px] text-slate-400 leading-relaxed">The ball is found by its round outline, not its colour, so any colour of ball works. It can still miss a ball that blends into the background or confuse other round objects. Enter your height to convert speed to approximate mph and km/h. Speeds are 2D estimates measured across the camera view, so kicks toward or away from the camera read low.</p>`;
+
+</div>
+
+<div class="flex flex-wrap items-center gap-2">
+
+  <label class="text-[10px] text-slate-400">Height</label>
+
+  <input id="tq-height" type="number"
+    min="3" max="230" placeholder="170"
+    class="w-16 text-[11px] rounded-md px-2 py-1">
+
+  <input id="tq-height-in" type="number"
+    min="0" max="11" placeholder="in"
+    class="hidden w-14 text-[11px] rounded-md px-2 py-1">
+
+  <select id="tq-height-unit"
+    class="text-[11px] rounded-md px-2 py-1">
+    <option value="cm">cm</option>
+    <option value="ftin">ft / in</option>
+  </select>
+
+  <span id="tq-cal-status"
+    class="text-[9px] text-amber-500">UNCALIBRATED</span>
+
+</div>
+
+<p id="tq-last"
+  class="text-[11px] leading-relaxed text-slate-400">
+  Start the camera and keep your body and the ball in frame.
+</p>
+
+<div class="flex flex-wrap gap-2">
+
+  <label class="text-[10px] inline-flex items-center gap-1">
+    <input id="tq-auto" type="checkbox" checked>
+    Post feedback to chat
+  </label>
+
+  <label class="text-[10px] inline-flex items-center gap-1">
+    <input id="tq-voice" type="checkbox" checked>
+    Speak cue
+  </label>
+
+  <button id="tq-report" type="button"
+    class="text-[10px] rounded-lg px-3 py-1.5 bg-emerald-500/10">
+    Session report
+  </button>
+
+  <button id="tq-reset" type="button"
+    class="text-[10px] rounded-lg px-3 py-1.5 bg-slate-100 dark:bg-[#16241d]">
+    Reset
+  </button>
+
+</div>
+
+<p class="text-[9px] text-slate-400">
+  Shape-based and AI-assisted ball tracking. Speed is estimated
+  from 2D camera motion and calibrated using your height.
+  Camera angle, perspective, and occlusion affect accuracy.
+</p>
+`;
+
 const slot = document.getElementById("tactiq-ball-panel-slot");
-if (slot) slot.appendChild(panel);
-else document.getElementById("tactiq-live-observation").parentElement.insertAdjacentElement("afterend", panel);
-const $ = (id) => document.getElementById(id);
-$("tq-auto").onchange = (e) => (S.auto = e.target.checked);
-$("tq-voice").onchange = (e) => (S.voice = e.target.checked);
+
+if (slot) {
+  slot.appendChild(panel);
+} else {
+  const observation = document.getElementById("tactiq-live-observation");
+
+  if (observation?.parentElement) {
+    observation.parentElement.insertAdjacentElement("afterend", panel);
+  }
+}
+
+const $ = id => document.getElementById(id);
+
+$("tq-auto").onchange = e => S.auto = e.target.checked;
+$("tq-voice").onchange = e => S.voice = e.target.checked;
 $("tq-reset").onclick = resetSession;
+$("tq-report").onclick = () => postToChat(sessionReport());
 
-function setSpeedTiles(t) {
-  const mph = t == null ? null : toMph(t), kmh = t == null ? null : toKmh(t);
-  $("tq-mph").textContent = mph == null ? "--" : mph.toFixed(1);
-  $("tq-kmh").textContent = kmh == null ? "--" : kmh.toFixed(1);
-}
-function refreshCalibrationUI() {
-  const cal = !!S.heightCm;
-  $("tq-cal-status").textContent = cal ? "CALIBRATED" : "UNCALIBRATED";
-  $("tq-cal-status").className = "text-[9px] font-mono " + (cal ? "text-emerald-500" : "text-amber-500");
-  const last = S.kicks[S.kicks.length - 1];
-  setSpeedTiles(last ? last.speed : null);
-}
+// --------------------------------------------------
+// HEIGHT CALIBRATION
+// --------------------------------------------------
 
-// ---------- height input (cm or ft/in) ----------
 function readHeightCm() {
   const a = parseFloat($("tq-height").value);
+
   let cm;
+
   if (S.heightUnit === "ftin") {
     const inches = parseFloat($("tq-height-in").value) || 0;
-    if (!(a >= 0)) return null;
+
+    if (!(a >= 3 && a <= 7) || inches < 0 || inches > 11) {
+      return null;
+    }
+
     cm = (a * 12 + inches) * 2.54;
   } else {
     cm = a;
   }
+
   return cm >= 100 && cm <= 230 ? cm : null;
 }
-function applyHeightUnitUI() {
-  const ftin = S.heightUnit === "ftin";
-  $("tq-height-unit").value = S.heightUnit;
-  $("tq-height-in").classList.toggle("hidden", !ftin);
-  $("tq-height").placeholder = ftin ? "ft" : "170";
-  $("tq-height").min = ftin ? "3" : "100";
-  $("tq-height").max = ftin ? "7" : "230";
-  $("tq-height").step = "1";
+
+function saveHeight() {
+  try {
+    if (S.heightCm) {
+      localStorage.setItem("tactiq_height_cm", String(S.heightCm));
+    } else {
+      localStorage.removeItem("tactiq_height_cm");
+    }
+  } catch {}
 }
+
 function writeHeightInputs() {
-  if (!S.heightCm) { $("tq-height").value = ""; $("tq-height-in").value = ""; return; }
+  if (!S.heightCm) {
+    $("tq-height").value = "";
+    $("tq-height-in").value = "";
+    return;
+  }
+
   if (S.heightUnit === "ftin") {
     const total = Math.round(S.heightCm / 2.54);
+
     $("tq-height").value = Math.floor(total / 12);
     $("tq-height-in").value = total % 12;
   } else {
@@ -141,355 +297,1450 @@ function writeHeightInputs() {
     $("tq-height-in").value = "";
   }
 }
-function saveHeight() {
-  try { S.heightCm ? localStorage.setItem("tactiq_height_cm", String(S.heightCm)) : localStorage.removeItem("tactiq_height_cm"); } catch {}
+
+function refreshCalibrationUI() {
+  const calibrated = !!S.heightCm;
+
+  $("tq-cal-status").textContent =
+    calibrated ? "CALIBRATED" : "UNCALIBRATED";
+
+  $("tq-cal-status").className =
+    calibrated
+      ? "text-[9px] text-emerald-500"
+      : "text-[9px] text-amber-500";
+
+  const last = S.kicks[S.kicks.length - 1];
+
+  setSpeedTiles(last ? last.speed : null);
 }
+
+function applyHeightUnitUI() {
+  const ftin = S.heightUnit === "ftin";
+
+  $("tq-height-unit").value = S.heightUnit;
+  $("tq-height-in").classList.toggle("hidden", !ftin);
+
+  $("tq-height").placeholder = ftin ? "ft" : "170";
+  $("tq-height").min = ftin ? "3" : "100";
+  $("tq-height").max = ftin ? "7" : "230";
+}
+
 function onHeightEdited() {
   S.heightCm = readHeightCm();
   saveHeight();
   refreshCalibrationUI();
 }
+
 $("tq-height").oninput = onHeightEdited;
 $("tq-height-in").oninput = onHeightEdited;
-$("tq-height-unit").onchange = (e) => {
+
+$("tq-height-unit").onchange = e => {
   S.heightUnit = e.target.value === "ftin" ? "ftin" : "cm";
-  try { localStorage.setItem("tactiq_height_unit", S.heightUnit); } catch {}
+
+  try {
+    localStorage.setItem("tactiq_height_unit", S.heightUnit);
+  } catch {}
+
   applyHeightUnitUI();
   writeHeightInputs();
   refreshCalibrationUI();
 };
+
 applyHeightUnitUI();
 writeHeightInputs();
 refreshCalibrationUI();
-$("tq-report").onclick = () => postToChat(sessionReport());
 
-function setStatus(text, kind) {
+function setSpeedTiles(t) {
+  const mph = t == null ? null : toMph(t);
+  const kmh = t == null ? null : toKmh(t);
+
+  $("tq-mph").textContent = mph == null ? "--" : mph.toFixed(1);
+  $("tq-kmh").textContent = kmh == null ? "--" : kmh.toFixed(1);
+}
+
+function setStatus(value, kind = "neutral") {
   const el = $("tq-ball-status");
-  el.textContent = text;
-  const c = { ok: "emerald", warn: "amber", err: "rose" }[kind] || "slate";
-  el.className = `text-[9px] font-mono px-2 py-0.5 rounded-md border border-${c}-500/25 bg-${c}-500/10 text-${c}-500`;
+
+  el.textContent = value;
+
+  const colors = {
+    ok: "emerald",
+    warn: "amber",
+    err: "rose",
+    neutral: "slate"
+  };
+
+  const c = colors[kind] || colors.neutral;
+
+  el.className =
+    `text-[9px] font-mono px-2 py-0.5 rounded-md border border-${c}-500/25 bg-${c}-500/10 text-${c}-500`;
 }
 
-// ---------- helpers ----------
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-function cover() {
-  const w = overlay.clientWidth, h = overlay.clientHeight;
-  const sa = (video.videoWidth || w) / (video.videoHeight || h), ta = w / h;
-  if (sa > ta) { const v = ta / sa; return { w, h, fx: (x) => (x - (1 - v) / 2) / v, fy: (y) => y }; }
-  const v = sa / ta; return { w, h, fx: (x) => x, fy: (y) => (y - (1 - v) / 2) / v };
-}
+// --------------------------------------------------
+// CANVAS POSITIONING
+// --------------------------------------------------
+
 function fit() {
-  const r = overlay.getBoundingClientRect(), d = Math.max(1, devicePixelRatio || 1);
-  if (overlay.width !== Math.round(r.width * d) || overlay.height !== Math.round(r.height * d)) {
-    overlay.width = Math.round(r.width * d); overlay.height = Math.round(r.height * d);
+  const r = overlay.getBoundingClientRect();
+  const d = Math.max(1, window.devicePixelRatio || 1);
+
+  if (
+    overlay.width !== Math.round(r.width * d) ||
+    overlay.height !== Math.round(r.height * d)
+  ) {
+    overlay.width = Math.round(r.width * d);
+    overlay.height = Math.round(r.height * d);
+
     octx.setTransform(d, 0, 0, d, 0, 0);
   }
 }
-// Pose landmarks in video pixels, plus torso length (shoulder midpoint to hip midpoint).
-function bodyInfo() {
-  const lm = window.tactiqLandmarks;
-  if (!lm) return null;
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const px = (p) => ({ x: p.x * vw, y: p.y * vh, v: p.visibility ?? 1 });
-  const [ls, rs, lh, rh, la, ra] = [11, 12, 23, 24, 27, 28].map((i) => px(lm[i]));
-  const nose = lm[0] ? px(lm[0]) : null;
-  const sm = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 }, hm = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
-  const torso = dist(sm, hm);
-  return torso > 10 ? { torso, la, ra, nose } : null;
+
+function cover() {
+  const w = overlay.clientWidth;
+  const h = overlay.clientHeight;
+
+  const sa = video.videoWidth / video.videoHeight;
+  const ta = w / h;
+
+  if (sa > ta) {
+    const v = ta / sa;
+
+    return {
+      w,
+      h,
+      fx: x => (x - (1 - v) / 2) / v,
+      fy: y => y
+    };
+  }
+
+  const v = sa / ta;
+
+  return {
+    w,
+    h,
+    fx: x => x,
+    fy: y => (y - (1 - v) / 2) / v
+  };
 }
 
-// ---------- shape-based (colour-independent) ball detector ----------
-// <hough>
-let H_ACC = null;
-// gray: Float32Array (W*H) of brightness values 0-255.
-// Finds the most complete circle outline with radius between rMin and rMax (pixels).
-// avoid: optional {x,y,r} circle to ignore (e.g. the player's head). prev: optional last ball {x,y,r}.
-function houghBall(gray, W, H, rMin, rMax, avoid, prev) {
+// --------------------------------------------------
+// PLAYER BODY TRACKING
+// --------------------------------------------------
+
+function bodyInfo() {
+  const lm = window.tactiqLandmarks;
+
+  if (!lm || !video.videoWidth) return null;
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+
+  const px = p => ({
+    x: p.x * vw,
+    y: p.y * vh,
+    v: p.visibility ?? 1
+  });
+
+  const get = i => lm[i] ? px(lm[i]) : null;
+
+  const ls = get(11);
+  const rs = get(12);
+  const lh = get(23);
+  const rh = get(24);
+
+  if (!ls || !rs || !lh || !rh) return null;
+
+  const la = get(27);
+  const ra = get(28);
+
+  if (!la || !ra) return null;
+
+  const sm = {
+    x: (ls.x + rs.x) / 2,
+    y: (ls.y + rs.y) / 2
+  };
+
+  const hm = {
+    x: (lh.x + rh.x) / 2,
+    y: (lh.y + rh.y) / 2
+  };
+
+  const torso = dist(sm, hm);
+
+  if (torso < 10) return null;
+
+  const parts = [];
+
+  const add = (i, radius) => {
+    const p = get(i);
+
+    if (p && p.v >= 0.4) {
+      parts.push({ p, r: radius });
+    }
+  };
+
+  add(0, 0.45);
+  add(11, 0.2);
+  add(12, 0.2);
+  add(13, 0.15);
+  add(14, 0.15);
+  add(23, 0.2);
+  add(24, 0.2);
+  add(25, 0.14);
+  add(26, 0.14);
+
+  return { torso, la, ra, parts };
+}
+
+function inAvoid(x, y, body) {
+  if (!body) return false;
+
+  return body.parts.some(({ p, r }) =>
+    Math.hypot(x - p.x, y - p.y) < r * body.torso
+  );
+}
+
+function avoidList(body, scale, ox = 0, oy = 0) {
+  if (!body) return null;
+
+  return body.parts.map(({ p, r }) => ({
+    x: (p.x - ox) * scale,
+    y: (p.y - oy) * scale,
+    r: r * body.torso * scale
+  }));
+}
+
+// --------------------------------------------------
+// OPTIMIZED SHAPE DETECTOR
+// --------------------------------------------------
+
+let GX, GY, MG, ACC;
+
+function houghCircles(gray, W, H, rMin, rMax, avoid) {
   const RN = rMax - rMin + 1;
-  const need = W * H * RN;
-  if (!H_ACC || H_ACC.length !== need) H_ACC = new Uint16Array(need); else H_ACC.fill(0);
-  const acc = H_ACC;
-  const gxA = new Float32Array(W * H), gyA = new Float32Array(W * H);
-  let sum = 0, cnt = 0;
+  const n = W * H;
+  const need = n * RN;
+
+  if (!ACC || ACC.length < need) {
+    ACC = new Uint16Array(need);
+  }
+
+  if (!GX || GX.length < n) {
+    GX = new Float32Array(n);
+    GY = new Float32Array(n);
+    MG = new Float32Array(n);
+  }
+
+  ACC.fill(0, 0, need);
+
+  GX.fill(0, 0, n);
+  GY.fill(0, 0, n);
+  MG.fill(0, 0, n);
+
+  const hist = new Uint32Array(256);
+
+  // Sobel edge detection.
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
-      const gx = -gray[i - W - 1] + gray[i - W + 1] - 2 * gray[i - 1] + 2 * gray[i + 1] - gray[i + W - 1] + gray[i + W + 1];
-      const gy = -gray[i - W - 1] - 2 * gray[i - W] - gray[i - W + 1] + gray[i + W - 1] + 2 * gray[i + W] + gray[i + W + 1];
-      gxA[i] = gx; gyA[i] = gy;
-      sum += Math.hypot(gx, gy) / 4; cnt++;
+
+      const gx =
+        -gray[i - W - 1] + gray[i - W + 1]
+        - 2 * gray[i - 1] + 2 * gray[i + 1]
+        - gray[i + W - 1] + gray[i + W + 1];
+
+      const gy =
+        -gray[i - W - 1] - 2 * gray[i - W] - gray[i - W + 1]
+        + gray[i + W - 1] + 2 * gray[i + W] + gray[i + W + 1];
+
+      GX[i] = gx;
+      GY[i] = gy;
+
+      const mag = Math.hypot(gx, gy) / 4;
+
+      MG[i] = mag;
+      hist[Math.min(255, mag | 0)]++;
     }
   }
-  const thr = Math.max(EDGE_MIN, (sum / Math.max(1, cnt)) * 2);
+
+  // Adaptive edge threshold.
+  let threshold = CFG.edgeThreshold;
+  let total = 0;
+
+  for (let b = 255; b >= 0; b--) {
+    total += hist[b];
+
+    if (total > CFG.maxEdges) {
+      threshold = Math.max(threshold, b + 1);
+      break;
+    }
+  }
+
+  // Circle voting.
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
-      const hyp = Math.hypot(gxA[i], gyA[i]);
-      if (hyp / 4 < thr) continue;
-      const ux = gxA[i] / hyp, uy = gyA[i] / hyp;
+
+      if (MG[i] < threshold) continue;
+
+      const mag = Math.hypot(GX[i], GY[i]);
+
+      if (!mag) continue;
+
+      const ux = GX[i] / mag;
+      const uy = GY[i] / mag;
+
       for (let r = rMin; r <= rMax; r++) {
-        for (let s = -1; s <= 1; s += 2) {
-          const cx = Math.round(x + s * ux * r), cy = Math.round(y + s * uy * r);
-          if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
-          acc[(cy * W + cx) * RN + (r - rMin)]++;
+        for (const sign of [-1, 1]) {
+          const cx = Math.round(x + sign * ux * r);
+          const cy = Math.round(y + sign * uy * r);
+
+          if (
+            cx < 1 || cy < 1 ||
+            cx >= W - 1 || cy >= H - 1
+          ) continue;
+
+          const idx = (cy * W + cx) * RN + r - rMin;
+
+          if (ACC[idx] < 65535) ACC[idx]++;
         }
       }
     }
   }
-  const s3 = (cx, cy, k) => {
+
+  const voteAt = (cx, cy, k) => {
     if (cx < 0 || cy < 0 || cx >= W || cy >= H) return 0;
-    const b = (cy * W + cx) * RN;
-    return acc[b + k] + (k > 0 ? acc[b + k - 1] : 0) + (k < RN - 1 ? acc[b + k + 1] : 0);
+
+    const base = (cy * W + cx) * RN;
+
+    return ACC[base + k]
+      + (k > 0 ? ACC[base + k - 1] : 0)
+      + (k < RN - 1 ? ACC[base + k + 1] : 0);
   };
-  const cands = [];
-  for (let cy = 0; cy < H; cy++) {
-    for (let cx = 0; cx < W; cx++) {
+
+  // Find local peaks rather than sorting every possible circle.
+  const candidates = [];
+
+  for (let cy = 2; cy < H - 2; cy++) {
+    for (let cx = 2; cx < W - 2; cx++) {
       const base = (cy * W + cx) * RN;
+
       for (let k = 0; k < RN; k++) {
-        if (acc[base + k] === 0) continue;
-        const r = rMin + k, v = s3(cx, cy, k);
-        if (v < 0.25 * 2 * Math.PI * r) continue;
-        if (avoid && Math.hypot(cx - avoid.x, cy - avoid.y) < avoid.r) continue;
-        cands.push({ cx, cy, k, r, q: v / (2 * Math.PI * r) });
+        if (!ACC[base + k]) continue;
+
+        const r = rMin + k;
+        const votes = voteAt(cx, cy, k);
+
+        if (votes < 0.28 * 2 * Math.PI * r) continue;
+
+        if (avoid && avoid.some(a =>
+          Math.hypot(cx - a.x, cy - a.y) < a.r
+        )) continue;
+
+        // Require a local maximum.
+        let maximum = true;
+
+        for (let dy = -1; dy <= 1 && maximum; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+
+            if (voteAt(cx + dx, cy + dy, k) > votes) {
+              maximum = false;
+              break;
+            }
+          }
+        }
+
+        if (!maximum) continue;
+
+        const q = votes / (2 * Math.PI * r);
+
+        candidates.push({
+          cx,
+          cy,
+          k,
+          r,
+          q
+        });
       }
     }
   }
-  if (!cands.length) return null;
-  cands.sort((a, b) => b.q - a.q);
-  let best = null;
-  for (const c of cands.slice(0, 16)) {
-    let tot = 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) tot += s3(c.cx + dx, c.cy + dy, c.k);
-    let score = Math.min(1.2, tot / (2 * Math.PI * c.r));
-    if (prev && Math.hypot(c.cx - prev.x, c.cy - prev.y) < Math.max(6, prev.r * 3)) score *= 1.25;
-    if (!best || score > best.score) best = { x: c.cx, y: c.cy, r: c.r, score };
+
+  candidates.sort((a, b) => b.q - a.q);
+
+  const result = [];
+
+  for (const c of candidates.slice(0, 50)) {
+    if (result.some(o =>
+      Math.hypot(o.x - c.cx, o.y - c.cy) <
+      0.6 * Math.max(o.r, c.r)
+    )) continue;
+
+    // Ring coverage verification.
+    let hits = 0;
+    let samples = 0;
+
+    for (let j = 0; j < 24; j++) {
+      const angle = j * Math.PI * 2 / 24;
+
+      const ux = Math.cos(angle);
+      const uy = Math.sin(angle);
+
+      let found = false;
+
+      for (let d = -2; d <= 2; d++) {
+        const x = Math.round(c.cx + (c.r + d) * ux);
+        const y = Math.round(c.cy + (c.r + d) * uy);
+
+        if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) {
+          continue;
+        }
+
+        const i = y * W + x;
+
+        if (MG[i] < threshold) continue;
+
+        const mag = Math.hypot(GX[i], GY[i]) || 1;
+
+        const radial =
+          Math.abs(GX[i] * ux + GY[i] * uy) / mag;
+
+        if (radial > 0.72) {
+          found = true;
+          break;
+        }
+      }
+
+      samples++;
+
+      if (found) hits++;
+    }
+
+    const coverage = samples ? hits / samples : 0;
+
+    if (coverage < CFG.minCoverage) continue;
+
+    const vote = Math.min(1, c.q);
+
+    const score = 0.4 * vote + 0.6 * coverage;
+
+    result.push({
+      x: c.cx,
+      y: c.cy,
+      r: c.r,
+      score,
+      coverage
+    });
+
+    if (result.length >= CFG.maxCandidates) break;
   }
-  return best && best.score >= SHAPE_MIN ? best : null;
+
+  return result.sort((a, b) => b.score - a.score);
 }
-// </hough>
+
+// --------------------------------------------------
+// IMAGE PROCESSING
+// --------------------------------------------------
 
 const scan = document.createElement("canvas");
-const sctx = scan.getContext("2d", { willReadFrequently: true });
-let G1 = null, G2 = null;
+const sctx = scan.getContext("2d", {
+  willReadFrequently: true
+});
 
-function detectShape() {
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (!vw || !vh) return null;
-  const W = SCAN_W, H = Math.max(40, Math.round((vh * W) / vw)), scale = W / vw;
-  if (scan.width !== W || scan.height !== H) { scan.width = W; scan.height = H; }
-  if (!G1 || G1.length !== W * H) { G1 = new Float32Array(W * H); G2 = new Float32Array(W * H); }
-  sctx.drawImage(video, 0, 0, W, H);
-  const d = sctx.getImageData(0, 0, W, H).data;
-  for (let i = 0, p = 0; i < W * H; i++, p += 4) G1[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
-  // light 3x3 blur to suppress noise before edge detection
-  G2.set(G1);
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-    const i = y * W + x;
-    G2[i] = (G1[i - W - 1] + G1[i - W] + G1[i - W + 1] + G1[i - 1] + G1[i] + G1[i + 1] + G1[i + W - 1] + G1[i + W] + G1[i + W + 1]) / 9;
+let G1 = null;
+let G2 = null;
+
+function grabGray(sx, sy, sw, sh, W, H) {
+  if (scan.width !== W || scan.height !== H) {
+    scan.width = W;
+    scan.height = H;
   }
-  let rMin = R_MIN, rMax = R_MAX, avoid = null;
-  const body = bodyInfo();
-  if (body) {
-    // A ball is much smaller than the player's torso; the head is round too, so ignore it.
-    const tsc = body.torso * scale;
-    rMin = Math.max(3, Math.round(tsc * 0.08));
-    rMax = Math.min(R_MAX, Math.round(tsc * 0.5));
-    if (rMax < rMin + 2) { rMin = R_MIN; rMax = R_MAX; }
-    if (body.nose) avoid = { x: body.nose.x * scale, y: body.nose.y * scale, r: tsc * 0.45 };
+
+  sctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H);
+
+  const data = sctx.getImageData(0, 0, W, H).data;
+  const n = W * H;
+
+  if (!G1 || G1.length < n) {
+    G1 = new Float32Array(n);
+    G2 = new Float32Array(n);
   }
-  const prev = S.ball ? { x: S.ball.x * scale, y: S.ball.y * scale, r: S.ball.r * scale } : null;
-  const hit = houghBall(G2, W, H, rMin, rMax, avoid, prev);
-  return hit ? { x: hit.x / scale, y: hit.y / scale, r: hit.r / scale, score: Math.min(1, hit.score), shape: true } : null;
+
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    G1[i] =
+      0.299 * data[p] +
+      0.587 * data[p + 1] +
+      0.114 * data[p + 2];
+  }
+
+  G2.set(G1.subarray(0, n));
+
+  // Light blur reduces sensor noise.
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+
+      G2[i] = (
+        G1[i - W - 1] + G1[i - W] + G1[i - W + 1] +
+        G1[i - 1] + G1[i] + G1[i + 1] +
+        G1[i + W - 1] + G1[i + W] + G1[i + W + 1]
+      ) / 9;
+    }
+  }
+
+  return G2;
 }
 
-// ---------- detection loop ----------
+// --------------------------------------------------
+// GLOBAL SEARCH
+// --------------------------------------------------
+
+function searchGlobal(body) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+
+  const W = CFG.scanWidth;
+  const H = Math.max(60, Math.round(vh * W / vw));
+
+  const scale = W / vw;
+
+  const gray = grabGray(0, 0, vw, vh, W, H);
+
+  let rMin = CFG.minRadius;
+  let rMax = CFG.maxRadius;
+
+  if (body) {
+    const torso = body.torso * scale;
+
+    rMin = Math.max(4, Math.round(torso * 0.12));
+    rMax = Math.min(
+      CFG.maxRadius,
+      Math.round(torso * 0.45)
+    );
+  }
+
+  const circles = houghCircles(
+    gray,
+    W,
+    H,
+    rMin,
+    Math.max(rMin + 2, rMax),
+    avoidList(body, scale)
+  );
+
+  return circles.map(c => ({
+    x: c.x / scale,
+    y: c.y / scale,
+    r: c.r / scale,
+    score: c.score,
+    coverage: c.coverage
+  }));
+}
+
+// --------------------------------------------------
+// TRACKED REGION SEARCH
+// --------------------------------------------------
+
+function searchRoi(track, prediction, gate, body) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+
+  const size = gate + track.r * 1.5;
+
+  const sx = Math.max(0, prediction.x - size);
+  const sy = Math.max(0, prediction.y - size);
+
+  const ex = Math.min(vw, prediction.x + size);
+  const ey = Math.min(vh, prediction.y + size);
+
+  const sw = ex - sx;
+  const sh = ey - sy;
+
+  if (sw < 24 || sh < 24) return [];
+
+  let scale = clamp(16 / track.r, 0.4, 1.6);
+
+  scale = Math.min(scale, 300 / sw, 300 / sh);
+
+  const W = Math.max(16, Math.round(sw * scale));
+  const H = Math.max(16, Math.round(sh * scale));
+
+  const gray = grabGray(sx, sy, sw, sh, W, H);
+
+  const rMin = Math.max(3, Math.round(track.r * 0.65 * scale));
+  const rMax = Math.max(
+    rMin + 2,
+    Math.round(track.r * 1.5 * scale)
+  );
+
+  return houghCircles(
+    gray,
+    W,
+    H,
+    rMin,
+    rMax,
+    avoidList(body, scale, sx, sy)
+  ).map(c => ({
+    x: sx + c.x / scale,
+    y: sy + c.y / scale,
+    r: c.r / scale,
+    score: c.score,
+    coverage: c.coverage
+  }));
+}
+
+// --------------------------------------------------
+// OPTIONAL MEDIAPIPE OBJECT DETECTOR
+// --------------------------------------------------
+
 async function ensureDetector() {
   if (S.detector || S.loading || S.failed) return;
+
   S.loading = true;
+
   try {
     const vision = await FilesetResolver.forVisionTasks(WASM);
-    const opts = { runningMode: "VIDEO", scoreThreshold: MIN_SCORE, categoryAllowlist: ["sports ball"], maxResults: 3 };
-    try { S.detector = await ObjectDetector.createFromOptions(vision, { ...opts, baseOptions: { modelAssetPath: MODEL, delegate: "GPU" } }); }
-    catch { S.detector = await ObjectDetector.createFromOptions(vision, { ...opts, baseOptions: { modelAssetPath: MODEL, delegate: "CPU" } }); }
-  } catch (e) { console.warn("Optional ball object model failed; using shape detector only.", e); S.failed = true; }
+
+    const options = {
+      runningMode: "VIDEO",
+      scoreThreshold: CFG.minScore,
+      categoryAllowlist: ["sports ball"],
+      maxResults: 3
+    };
+
+    try {
+      S.detector = await ObjectDetector.createFromOptions(
+        vision,
+        {
+          ...options,
+          baseOptions: {
+            modelAssetPath: MODEL,
+            delegate: "GPU"
+          }
+        }
+      );
+    } catch {
+      S.detector = await ObjectDetector.createFromOptions(
+        vision,
+        {
+          ...options,
+          baseOptions: {
+            modelAssetPath: MODEL,
+            delegate: "CPU"
+          }
+        }
+      );
+    }
+  } catch (error) {
+    console.warn("MediaPipe ball detector unavailable.", error);
+    S.failed = true;
+  }
+
   S.loading = false;
 }
 
-function detectBall(now) {
-  S.tried++;
-  let best = null;
-  if (S.detector) {
-    const res = S.detector.detectForVideo(video, now);
-    for (const d of res.detections || []) {
-      const bb = d.boundingBox, sc = d.categories?.[0]?.score ?? 0;
-      if (!bb || sc < MIN_SCORE) continue;
-      // A ball is roughly square; reject very elongated boxes.
-      const ar = bb.width / bb.height; if (ar < 0.5 || ar > 2) continue;
-      if (!best || sc > best.score) best = { x: bb.originX + bb.width / 2, y: bb.originY + bb.height / 2, r: (bb.width + bb.height) / 4, score: sc };
+function runDetector(now, body) {
+  if (!S.detector) return null;
+
+  try {
+    const result = S.detector.detectForVideo(video, now);
+
+    let best = null;
+
+    for (const detection of result.detections || []) {
+      const bb = detection.boundingBox;
+      const score = detection.categories?.[0]?.score ?? 0;
+
+      if (!bb || score < CFG.minScore) continue;
+
+      const ratio = bb.width / bb.height;
+
+      if (ratio < 0.6 || ratio > 1.67) continue;
+
+      const candidate = {
+        x: bb.originX + bb.width / 2,
+        y: bb.originY + bb.height / 2,
+        r: (bb.width + bb.height) / 4,
+        score
+      };
+
+      if (inAvoid(candidate.x, candidate.y, body)) continue;
+
+      if (!best || score > best.score) {
+        best = candidate;
+      }
     }
+
+    return best;
+  } catch (error) {
+    console.warn("MediaPipe frame detection failed.", error);
+    return null;
   }
-  // Colour-independent fallback: any round object found by its outline.
-  if (!best) best = detectShape();
-  if (best) {
-    S.seen++;
-    if (S.ball) { best.x = S.ball.x * 0.3 + best.x * 0.7; best.y = S.ball.y * 0.3 + best.y * 0.7; best.r = S.ball.r * 0.5 + best.r * 0.5; } // light smoothing
-    best.t = now; S.ball = best; S.lastSeen = now; S.trail.push(best);
-    if (S.trail.length > 12) S.trail.shift();
-    onBall(best, now);
-  } else if (now - S.lastSeen > LOST_MS) { S.ball = null; S.trail = []; S.nearInfo = null; }
 }
 
+// --------------------------------------------------
+// CANDIDATE SELECTION
+// --------------------------------------------------
+
+function pickBest(candidates, reference, gate) {
+  let best = null;
+
+  for (const c of candidates) {
+    const d = reference ? dist(c, reference) : 0;
+
+    if (reference && d > gate) continue;
+
+    const adjusted =
+      c.score - (reference ? 0.15 * d / gate : 0);
+
+    if (!best || adjusted > best.adjusted) {
+      best = { ...c, adjusted };
+    }
+  }
+
+  return best;
+}
+
+// --------------------------------------------------
+// BALL TRACKING
+// --------------------------------------------------
+
+function registerHit(c, now, restart = false) {
+  S.seen++;
+
+  let tr = S.track;
+
+  if (tr && !restart) {
+    const dt = Math.max(0.016, (now - tr.t) / 1000);
+
+    const rawVx = (c.x - tr.x) / dt;
+    const rawVy = (c.y - tr.y) / dt;
+
+    // Smooth velocity without allowing a single noisy frame
+    // to completely change the prediction.
+    tr.vx = tr.vx * 0.55 + rawVx * 0.45;
+    tr.vy = tr.vy * 0.55 + rawVy * 0.45;
+
+    const px = tr.x + tr.vx * dt;
+    const py = tr.y + tr.vy * dt;
+
+    tr.x = 0.8 * c.x + 0.2 * px;
+    tr.y = 0.8 * c.y + 0.2 * py;
+
+    tr.r = 0.65 * tr.r + 0.35 * c.r;
+
+    tr.hits++;
+    tr.miss = 0;
+    tr.t = now;
+    tr.score = c.score;
+  } else {
+    S.track = tr = {
+      x: c.x,
+      y: c.y,
+      r: c.r,
+      vx: 0,
+      vy: 0,
+      t: now,
+      hits: 2,
+      miss: 0,
+      score: c.score
+    };
+
+    S.trail = [];
+    S.nearInfo = null;
+  }
+
+  S.pending = null;
+
+  S.ball = {
+    x: tr.x,
+    y: tr.y,
+    r: tr.r,
+    score: c.score,
+    t: now,
+    stale: false
+  };
+
+  S.lastSeen = now;
+
+  S.trail.push(S.ball);
+
+  if (S.trail.length > CFG.maxTrail) {
+    S.trail.shift();
+  }
+
+  onBall(S.ball, now);
+}
+
+function registerMiss(now) {
+  if (S.pending && now - S.pending.t > 700) {
+    S.pending = null;
+  }
+
+  if (!S.track) return;
+
+  S.track.miss++;
+
+  if (S.ball) S.ball.stale = true;
+
+  if (now - S.track.t > CFG.lostTime) {
+    S.track = null;
+    S.ball = null;
+    S.trail = [];
+    S.nearInfo = null;
+  }
+}
+
+// --------------------------------------------------
+// MAIN DETECTION
+// --------------------------------------------------
+
+function detectBall(now) {
+  S.tried++;
+
+  if (!video.videoWidth || !video.videoHeight) return;
+
+  const body = bodyInfo();
+  const tr = S.track;
+
+  let prediction = null;
+  let gate = 0;
+
+  if (tr) {
+    const dt = Math.min(
+      CFG.predictionWindow,
+      Math.max(0, (now - tr.t) / 1000)
+    );
+
+    prediction = {
+      x: tr.x + tr.vx * dt,
+      y: tr.y + tr.vy * dt
+    };
+
+    gate =
+      tr.r * 3 +
+      Math.hypot(tr.vx, tr.vy) * dt * 0.7 +
+      tr.r * 0.8 * tr.miss + 12;
+  }
+
+  // First search around the predicted ball location.
+  if (tr) {
+    const roi = searchRoi(tr, prediction, gate, body);
+
+    let hit = pickBest(roi, prediction, gate);
+
+    if (hit && hit.score >= CFG.trackScore) {
+      registerHit(hit, now);
+      return;
+    }
+  }
+
+  // Search the whole camera image when necessary.
+  const global = searchGlobal(body);
+
+  let aiBall = null;
+
+  // Run the heavier model less frequently.
+  if (
+    S.detector &&
+    (!tr || tr.miss > 0 || S.tried % 5 === 0)
+  ) {
+    aiBall = runDetector(now, body);
+  }
+
+  // Fuse shape detection and AI detection.
+  if (aiBall) {
+    let matched = false;
+
+    for (const c of global) {
+      if (dist(c, aiBall) < Math.max(c.r, aiBall.r) * 1.2) {
+        c.score = Math.min(1, c.score + 0.2);
+        matched = true;
+      }
+    }
+
+    if (!matched && aiBall.score >= 0.5) {
+      global.push({
+        ...aiBall,
+        score: aiBall.score * 0.9
+      });
+    }
+  }
+
+  // Recover a lost ball using the predicted trajectory.
+  if (tr) {
+    const nearby = pickBest(global, prediction, gate * 2);
+
+    if (nearby && nearby.score >= CFG.trackScore) {
+      registerHit(nearby, now);
+      return;
+    }
+  }
+
+  // Require repeated evidence before acquiring a new ball.
+  let acquisition = null;
+
+  for (const c of global) {
+    if (
+      c.score >= CFG.acquireScore &&
+      (!acquisition || c.score > acquisition.score)
+    ) {
+      acquisition = c;
+    }
+  }
+
+  if (acquisition) {
+    const p = S.pending;
+
+    const confirmed =
+      acquisition.score >= CFG.strongScore ||
+      (
+        p &&
+        now - p.t < 700 &&
+        dist(acquisition, p) <
+          Math.max(p.r * 2.5, 24)
+      );
+
+    if (confirmed) {
+      registerHit(acquisition, now, !!tr);
+      return;
+    }
+
+    S.pending = {
+      ...acquisition,
+      t: now
+    };
+  }
+
+  registerMiss(now);
+}
+
+// --------------------------------------------------
+// BALL SPEED
+// --------------------------------------------------
+
 function ballSpeed(torso) {
-  const t = S.trail; if (t.length < 2) return 0;
-  const b = t[t.length - 1]; let a = t[0];
-  for (let i = t.length - 2; i >= 0; i--) { if (b.t - t[i].t >= 70) { a = t[i]; break; } }
-  const dt = (b.t - a.t) / 1000; if (dt <= 0) return 0;
+  const trail = S.trail;
+
+  if (trail.length < 2 || !torso) return 0;
+
+  const b = trail[trail.length - 1];
+
+  let a = trail[0];
+
+  for (let i = trail.length - 2; i >= 0; i--) {
+    if (b.t - trail[i].t >= 70) {
+      a = trail[i];
+      break;
+    }
+  }
+
+  const dt = (b.t - a.t) / 1000;
+
+  if (dt <= 0) return 0;
+
   return dist(a, b) / dt / torso;
 }
 
+// --------------------------------------------------
+// KICK ANALYSIS
+// --------------------------------------------------
+
 function onBall(ball, now) {
-  const body = bodyInfo(); if (!body) return;
-  const dl = dist(ball, body.la), dr = dist(ball, body.ra);
+  const body = bodyInfo();
+
+  if (!body) return;
+
+  const dl = dist(ball, body.la);
+  const dr = dist(ball, body.ra);
+
   const near = Math.min(dl, dr) / body.torso;
-  if (near < NEAR_TORSOS) S.nearInfo = { t: now, foot: dl <= dr ? "left" : "right", snap: { ...window.tactiqPoseMeasurements }, torso: body.torso };
+
+  if (near < CFG.nearTorso) {
+    S.nearInfo = {
+      t: now,
+      foot: dl <= dr ? "left" : "right",
+      snap: {
+        ...(window.tactiqPoseMeasurements || {})
+      },
+      torso: body.torso
+    };
+  }
+
   const speed = ballSpeed(body.torso);
-  const a = S.trail[0], b = S.trail[S.trail.length - 1];
-  if (speed > KICK_SPEED && S.nearInfo && now - S.nearInfo.t < 500 && now - S.lastKick > COOLDOWN_MS) {
+
+  const first = S.trail[0];
+  const last = S.trail[S.trail.length - 1];
+
+  // Require movement after a recent foot-proximity event.
+  if (
+    speed > CFG.kickSpeed &&
+    S.nearInfo &&
+    now - S.nearInfo.t < 500 &&
+    now - S.lastKick > CFG.cooldown
+  ) {
+    // Reject an implausible one-frame speed spike.
+    const previous = S.previousBallSpeed;
+
+    if (
+      previous > 0 &&
+      speed > previous * 4 &&
+      now - S.previousBallTime < 100
+    ) {
+      return;
+    }
+
     S.lastKick = now;
-    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    registerKick({ ...S.nearInfo, speed, rise: -dy / len, time: Date.now() });
+
+    const dx = last.x - first.x;
+    const dy = last.y - first.y;
+
+    const len = Math.hypot(dx, dy) || 1;
+
+    registerKick({
+      ...S.nearInfo,
+      speed,
+      rise: -dy / len,
+      time: Date.now()
+    });
   }
+
+  S.previousBallSpeed = speed;
+  S.previousBallTime = now;
 }
 
-// ---------- feedback ----------
-const fmt = (v) => (v == null ? null : Math.round(v));
+// --------------------------------------------------
+// COACHING ANALYSIS
+// --------------------------------------------------
+
+const fmt = v => v == null ? null : Math.round(v);
+
 function analyzeKick(k) {
-  const s = k.snap || {}, left = k.foot === "left";
-  const kickKnee = fmt(left ? s.leftKnee : s.rightKnee), plantKnee = fmt(left ? s.rightKnee : s.leftKnee);
-  const lean = fmt(s.torsoLean), vis = s.confidence;
-  const notes = []; let cue = "Plant. Strike. Follow.";
-  if (vis != null && vis < 60) notes.push("Body landmarks were only partly visible, so the joint readings for this kick are low-confidence. Improve lighting and keep your whole body in frame.");
-  if (plantKnee != null) {
-    if (plantKnee > 170) { notes.push(`Your plant-leg knee read about ${plantKnee}° (almost straight). A slight bend usually helps balance and control.`); cue = "Soft plant knee."; }
-    else if (plantKnee < 110) { notes.push(`Your plant-leg knee read about ${plantKnee}° (deeply bent). If the kick felt unstable, try a slightly taller plant.`); }
-    else notes.push(`Plant-leg knee read about ${plantKnee}°, a moderate bend.`);
+  const s = k.snap || {};
+  const left = k.foot === "left";
+
+  const kickKnee = fmt(left ? s.leftKnee : s.rightKnee);
+  const plantKnee = fmt(left ? s.rightKnee : s.leftKnee);
+  const lean = fmt(s.torsoLean);
+
+  const notes = [];
+
+  let cue = "Plant. Strike. Follow.";
+
+  if (s.confidence != null && s.confidence < 60) {
+    notes.push(
+      "Body landmarks were partly visible. Improve lighting and camera positioning for more reliable measurements."
+    );
   }
-  if (kickKnee != null) notes.push(`Kicking-leg knee read about ${kickKnee}° at the closest frame to contact; compare this across several kicks, since a single frame is noisy.`);
-  if (lean != null && Math.abs(lean) > 20) { notes.push(`Your torso was angled about ${Math.abs(lean)}° from vertical. If the ball is flying higher than you want, work on keeping your chest over the ball.`); cue = "Chest over ball."; }
-  if (k.rise > 0.6) notes.push("The ball left on a rising path in the camera view, which suggests a lofted strike. If you wanted a low drive, strike the middle of the ball and stay over it.");
-  else if (k.rise < 0.15) notes.push("The ball left on a fairly flat path in the camera view.");
-  if (!notes.length) notes.push("Kick detected, but there were no body measurements for this frame.");
-  return { notes, cue, kickKnee, plantKnee, lean };
+
+  if (plantKnee != null) {
+    if (plantKnee > 170) {
+      notes.push(
+        `Your plant-leg knee read about ${plantKnee}°. A slight bend can help with balance.`
+      );
+
+      cue = "Soft plant knee.";
+    } else if (plantKnee < 110) {
+      notes.push(
+        `Your plant-leg knee read about ${plantKnee}°. Compare your balance across several attempts.`
+      );
+    } else {
+      notes.push(
+        `Plant-leg knee read about ${plantKnee}°.`
+      );
+    }
+  }
+
+  if (kickKnee != null) {
+    notes.push(
+      `Kicking-leg knee read about ${kickKnee}° near the detected contact period.`
+    );
+  }
+
+  if (lean != null && Math.abs(lean) > 20) {
+    notes.push(
+      `Your torso was angled approximately ${Math.abs(lean)}° from vertical. If the ball is traveling too high, try keeping your chest over the ball.`
+    );
+
+    cue = "Chest over ball.";
+  }
+
+  if (k.rise > 0.6) {
+    notes.push(
+      "The ball traveled upward in the camera view, suggesting a lofted strike."
+    );
+  } else if (k.rise < 0.15) {
+    notes.push(
+      "The ball followed a relatively flat path in the camera view."
+    );
+  }
+
+  if (!notes.length) {
+    notes.push(
+      "Kick detected. More visible body measurements are needed for detailed technique feedback."
+    );
+  }
+
+  return {
+    notes,
+    cue,
+    kickKnee,
+    plantKnee,
+    lean
+  };
 }
 
-function registerKick(k) {
-  const r = analyzeKick(k); k.result = r; S.kicks.push(k);
-  $("tq-kicks").textContent = S.kicks.length;
-  setSpeedTiles(k.speed);
-  $("tq-last").textContent = `Kick #${S.kicks.length} (${k.foot} foot). ${r.notes.join(" ")}`;
-  const md = `## Kick #${S.kicks.length} — ${k.foot} foot
-
-**Ball speed:** ${speedLong(k.speed)}  
-**Plant knee:** ${r.plantKnee ?? "n/a"}° · **Kicking knee:** ${r.kickKnee ?? "n/a"}° · **Torso lean:** ${r.lean == null ? "n/a" : Math.abs(r.lean)}°
-
-${r.notes.map((n) => "- " + n).join("\n")}
-
-**Cue for the next rep:** ${r.cue}
-
-*2D camera estimates, not a technique grade or injury assessment.*`;
-  if (S.auto) postToChat(md);
-  if (S.voice && "speechSynthesis" in window) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(r.cue)); }
-}
-
-function sessionReport() {
-  const n = S.kicks.length;
-  if (!n) return "## Session report\n\nNo kicks have been detected yet. Make sure the ball and your whole body are in frame, then strike the ball.";
-  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
-  const l = S.kicks.filter((k) => k.foot === "left").length, rt = n - l;
-  const sp = S.kicks.map((k) => k.speed), pk = S.kicks.map((k) => k.result.plantKnee).filter((v) => v != null);
-  const half = Math.floor(n / 2);
-  const trend = n >= 4 ? (avg(sp.slice(half)) > avg(sp.slice(0, half)) * 1.1 ? "Later kicks were faster than earlier ones." : avg(sp.slice(half)) < avg(sp.slice(0, half)) * 0.9 ? "Later kicks were slower, which can mean fatigue; consider a rest." : "Ball speed stayed fairly consistent.") : "Record at least 4 kicks to see a trend.";
-  return `## Session report
-
-| Metric | Value |
-|---|---:|
-| Kicks detected | ${n} (L ${l} / R ${rt}) |
-| Average ball speed | ${speedLong(avg(sp))} |
-| Fastest | ${speedLong(Math.max(...sp))} |
-| Average plant knee | ${pk.length ? Math.round(avg(pk)) + "°" : "n/a"} |
-| Ball detected in frames | ${S.tried ? Math.round((S.seen / S.tried) * 100) : 0}% |
-
-${trend}${l && rt && Math.min(l, rt) / n < 0.25 ? " You used one foot far more than the other; add reps with your weaker foot." : ""}
-
-These are camera-based estimates and should be treated as practice guidance only.`;
-}
+// --------------------------------------------------
+// CHAT INTEGRATION
+// --------------------------------------------------
 
 function postToChat(md) {
   try {
     const conv = getActiveConversation();
-    if (conv) { conv.messages.push({ role: "model", text: md }); conv.updatedAt = Date.now(); saveConversations(); }
+
+    if (conv) {
+      conv.messages.push({
+        role: "model",
+        text: md
+      });
+
+      conv.updatedAt = Date.now();
+
+      saveConversations();
+    }
+
     appendMessageBubble("model", md, true);
-  } catch (e) { console.error("Could not post to chat", e); }
+  } catch (error) {
+    console.error("TACTIQ chat integration failed:", error);
+  }
 }
+
+// --------------------------------------------------
+// REGISTER KICK
+// --------------------------------------------------
+
+function registerKick(k) {
+  const result = analyzeKick(k);
+
+  k.result = result;
+
+  S.kicks.push(k);
+
+  const count = S.kicks.length;
+
+  $("tq-kicks").textContent = count;
+
+  setSpeedTiles(k.speed);
+
+  $("tq-last").textContent =
+    `Kick #${count} (${k.foot} foot). ${result.notes.join(" ")}`;
+
+  const message = `## Kick #${count} — ${k.foot} foot
+
+**Ball speed:** ${speedLong(k.speed)}
+
+**Plant knee:** ${result.plantKnee ?? "n/a"}°
+**Kicking knee:** ${result.kickKnee ?? "n/a"}°
+**Torso lean:** ${result.lean == null ? "n/a" : Math.abs(result.lean)}°
+
+${result.notes.map(n => "- " + n).join("\n")}
+
+**Cue for the next rep:** ${result.cue}
+
+*Camera-based 2D estimates. These are practice observations, not a technique grade or injury assessment.*`;
+
+  if (S.auto) {
+    postToChat(message);
+  }
+
+  if (S.voice && "speechSynthesis" in window) {
+    speechSynthesis.cancel();
+
+    speechSynthesis.speak(
+      new SpeechSynthesisUtterance(result.cue)
+    );
+  }
+}
+
+// --------------------------------------------------
+// SESSION REPORT
+// --------------------------------------------------
+
+function sessionReport() {
+  const kicks = S.kicks;
+  const n = kicks.length;
+
+  if (!n) {
+    return "## Session report\n\nNo kicks detected yet. Make sure your ball and full body are visible.";
+  }
+
+  const avg = arr =>
+    arr.reduce((a, b) => a + b, 0) / arr.length;
+
+  const left = kicks.filter(k => k.foot === "left").length;
+  const right = n - left;
+
+  const speeds = kicks.map(k => k.speed);
+
+  const knees = kicks
+    .map(k => k.result.plantKnee)
+    .filter(v => v != null);
+
+  const half = Math.floor(n / 2);
+
+  let trend = "Record at least four kicks to see a speed trend.";
+
+  if (n >= 4) {
+    const first = avg(speeds.slice(0, half));
+    const second = avg(speeds.slice(half));
+
+    if (second > first * 1.1) {
+      trend = "Later kicks were faster than earlier kicks.";
+    } else if (second < first * 0.9) {
+      trend = "Later kicks were slower than earlier kicks.";
+    } else {
+      trend = "Ball speed remained relatively consistent.";
+    }
+  }
+
+  const detectionRate = S.tried
+    ? Math.round(S.seen / S.tried * 100)
+    : 0;
+
+  return `## TACTIQ session report
+
+| Metric | Result |
+|---|---:|
+| Kicks detected | ${n} |
+| Left-foot kicks | ${left} |
+| Right-foot kicks | ${right} |
+| Average speed | ${speedLong(avg(speeds))} |
+| Fastest kick | ${speedLong(Math.max(...speeds))} |
+| Average plant knee | ${knees.length ? Math.round(avg(knees)) + "°" : "n/a"} |
+| Detection rate | ${detectionRate}% |
+
+### Session observations
+
+${trend}
+
+${left && right && Math.min(left, right) / n < 0.25
+  ? "Consider including additional practice with your less-used foot."
+  : "Both-foot practice can help develop consistency."}
+
+*Camera-based estimates. Results depend on camera angle, lighting, and visibility.*`;
+}
+
+// --------------------------------------------------
+// RESET
+// --------------------------------------------------
 
 function resetSession() {
-  Object.assign(S, { ball: null, trail: [], nearInfo: null, kicks: [], seen: 0, tried: 0, lastKick: 0 });
-  $("tq-kicks").textContent = "0"; setSpeedTiles(null); $("tq-rate").textContent = "--%";
-  $("tq-last").textContent = "Session reset. Strike the ball to begin.";
+  Object.assign(S, {
+    ball: null,
+    trail: [],
+    track: null,
+    pending: null,
+    nearInfo: null,
+    kicks: [],
+    seen: 0,
+    tried: 0,
+    lastKick: 0,
+    previousBallSpeed: 0,
+    previousBallTime: 0
+  });
+
+  $("tq-kicks").textContent = "0";
+  $("tq-rate").textContent = "--%";
+  $("tq-last").textContent =
+    "Session reset. Strike the ball to begin.";
+
+  setSpeedTiles(null);
 }
 
-// ---------- main loop ----------
+// --------------------------------------------------
+// DRAW BALL TRACKING
+// --------------------------------------------------
+
+function draw() {
+  const c = cover();
+
+  octx.clearRect(0, 0, c.w, c.h);
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+
+  const point = p => ({
+    x: c.fx(p.x / vw) * c.w,
+    y: c.fy(p.y / vh) * c.h
+  });
+
+  // Ball movement trail.
+  if (S.trail.length > 1) {
+    octx.lineWidth = 2;
+    octx.lineCap = "round";
+
+    for (let i = 1; i < S.trail.length; i++) {
+      const a = point(S.trail[i - 1]);
+      const b = point(S.trail[i]);
+
+      octx.strokeStyle =
+        `rgba(255,212,0,${i / S.trail.length})`;
+
+      octx.beginPath();
+      octx.moveTo(a.x, a.y);
+      octx.lineTo(b.x, b.y);
+      octx.stroke();
+    }
+  }
+
+  if (!S.ball) return;
+
+  const p = point(S.ball);
+
+  const radius = Math.max(
+    10,
+    (S.ball.r / vh) * c.h * 1.1
+  );
+
+  octx.save();
+
+  octx.shadowColor = "rgba(255,212,0,0.95)";
+  octx.shadowBlur = 14;
+
+  octx.strokeStyle = "#ffd400";
+  octx.lineWidth = 4;
+
+  if (S.ball.stale) {
+    octx.globalAlpha = 0.5;
+    octx.setLineDash([6, 5]);
+  }
+
+  octx.beginPath();
+  octx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+  octx.stroke();
+
+  octx.restore();
+
+  // Ball label.
+  const body = bodyInfo();
+
+  const mph =
+    body && S.heightCm
+      ? toMph(ballSpeed(body.torso))
+      : null;
+
+  const label =
+    mph != null && mph >= 1
+      ? `BALL ${Math.round(mph)} mph`
+      : "BALL";
+
+  octx.save();
+
+  // Canvas is mirrored by CSS, so reverse the label.
+  octx.translate(
+    p.x,
+    Math.max(12, p.y - radius - 8)
+  );
+
+  octx.scale(-1, 1);
+
+  octx.font = "bold 11px monospace";
+  octx.textAlign = "center";
+  octx.textBaseline = "middle";
+
+  const width = octx.measureText(label).width + 10;
+
+  octx.fillStyle = "rgba(0,0,0,0.75)";
+  octx.fillRect(-width / 2, -9, width, 18);
+
+  octx.fillStyle = "#ffd400";
+  octx.fillText(label, 0, 0);
+
+  octx.restore();
+}
+
+// --------------------------------------------------
+// MAIN LOOP
+// --------------------------------------------------
+
 function loop() {
   requestAnimationFrame(loop);
+
   fit();
-  const active = !!video.srcObject && video.readyState >= 2;
-  if (!active) { octx.clearRect(0, 0, overlay.clientWidth, overlay.clientHeight); if (S.ball) { S.ball = null; S.trail = []; } setStatus("IDLE", "neutral"); return; }
-  // The optional object model loads in the background; the shape detector works immediately.
-  if (!S.detector && !S.loading && !S.failed) ensureDetector();
-  if (video.currentTime === S.lastVT) return;
-  S.lastVT = video.currentTime;
-  if (++S.frame % 2 === 0) {
-    try { detectBall(performance.now()); } catch (e) { console.error("Ball detection error", e); }
-    $("tq-rate").textContent = S.tried ? Math.round((S.seen / S.tried) * 100) + "%" : "--%";
-    setStatus(S.ball ? "BALL TRACKED" : "SEARCHING FOR BALL", S.ball ? "ok" : "warn");
+
+  const active =
+    !!video.srcObject &&
+    video.readyState >= 2;
+
+  if (!active) {
+    octx.clearRect(
+      0,
+      0,
+      overlay.clientWidth,
+      overlay.clientHeight
+    );
+
+    if (S.ball || S.track) {
+      S.ball = null;
+      S.trail = [];
+      S.track = null;
+      S.pending = null;
+      S.nearInfo = null;
+    }
+
+    setStatus("IDLE");
+    return;
   }
+
+  if (!S.detector && !S.loading && !S.failed) {
+    ensureDetector();
+  }
+
+  if (video.currentTime === S.lastVT) return;
+
+  S.lastVT = video.currentTime;
+
+  const now = performance.now();
+
+  if (now - S.lastDetect >= S.minInterval) {
+    S.lastDetect = now;
+
+    try {
+      detectBall(now);
+    } catch (error) {
+      console.error("TACTIQ detection error:", error);
+      setStatus("DETECTION ERROR", "err");
+    }
+
+    const elapsed = performance.now() - now;
+
+    // Adapt processing frequency to the device.
+    S.minInterval = clamp(elapsed * 1.5, 33, 150);
+
+    $("tq-rate").textContent =
+      S.tried
+        ? Math.round(S.seen / S.tried * 100) + "%"
+        : "--%";
+
+    const live = S.ball && !S.ball.stale;
+
+    setStatus(
+      live
+        ? "BALL TRACKED"
+        : S.pending
+          ? "CONFIRMING BALL"
+          : "SEARCHING",
+      live ? "ok" : "warn"
+    );
+  }
+
   draw();
 }
 
-function draw() {
-  const c = cover(); octx.clearRect(0, 0, c.w, c.h);
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const pt = (p) => ({ x: c.fx(p.x / vw) * c.w, y: c.fy(p.y / vh) * c.h });
-  if (S.trail.length > 1) {
-    octx.lineWidth = 2; octx.lineCap = "round";
-    for (let i = 1; i < S.trail.length; i++) {
-      const a = pt(S.trail[i - 1]), b = pt(S.trail[i]);
-      octx.strokeStyle = `rgba(255,212,0,${i / S.trail.length})`;
-      octx.beginPath(); octx.moveTo(a.x, a.y); octx.lineTo(b.x, b.y); octx.stroke();
-    }
-  }
-  if (S.ball) {
-    const p = pt(S.ball), r = Math.max(10, (S.ball.r / vh) * c.h * 1.1);
-    // Bright yellow outline with a soft glow so the player can see the ball is detected.
-    octx.save();
-    octx.shadowColor = "rgba(255,212,0,0.95)"; octx.shadowBlur = 14;
-    octx.strokeStyle = "#ffd400"; octx.lineWidth = 4;
-    octx.beginPath(); octx.arc(p.x, p.y, r, 0, Math.PI * 2); octx.stroke();
-    octx.restore();
-    octx.strokeStyle = "rgba(0,0,0,0.55)"; octx.lineWidth = 1;
-    octx.beginPath(); octx.arc(p.x, p.y, r + 2.5, 0, Math.PI * 2); octx.stroke();
-    // Label (the canvas is mirrored by CSS, so flip the text back so it reads correctly).
-    const body = bodyInfo();
-    const mph = body && S.heightCm ? toMph(ballSpeed(body.torso)) : null;
-    const label = mph != null && mph >= 1 ? `BALL ${Math.round(mph)} mph` : "BALL";
-    octx.save();
-    octx.translate(p.x, Math.max(12, p.y - r - 8)); octx.scale(-1, 1);
-    octx.font = "bold 11px 'JetBrains Mono', monospace"; octx.textAlign = "center"; octx.textBaseline = "middle";
-    const tw = octx.measureText(label).width + 10;
-    octx.fillStyle = "rgba(0,0,0,0.7)"; octx.fillRect(-tw / 2, -9, tw, 18);
-    octx.fillStyle = "#ffd400"; octx.fillText(label, 0, 0);
-    octx.restore();
-  }
-}
+// --------------------------------------------------
+// START
+// --------------------------------------------------
 
 requestAnimationFrame(loop);
+
+console.log("TACTIQ enhanced ball tracking initialized.");
