@@ -287,7 +287,7 @@
 
                 <!-- Subheadline -->
                 <p class="text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
-                    Solo soccer players often reinforce flawed mechanics when practicing without a coach. <strong class="text-slate-900 dark:text-white font-bold">TACTIQ</strong> transforms standard smartphone video into instant pose-tracking telemetry, joint-angle diagnostics, and injury-prevention feedback.
+                    Solo soccer players often practice without immediate feedback. <strong class="text-slate-900 dark:text-white font-bold">TACTIQ</strong> uses browser-based pose tracking to estimate visible body landmarks, calculate selected joint angles, and provide transparent training observations.
                 </p>
 
                 <!-- Quick-Action Buttons -->
@@ -306,15 +306,15 @@
                 <div class="pt-4 flex flex-wrap items-center justify-center gap-2.5 text-xs font-mono">
                     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
                         <i data-lucide="scan" class="w-3.5 h-3.5 text-emerald-500"></i>
-                        <span>MediaPipe / YOLOv8 Pose</span>
+                        <span>MediaPipe Pose Tracking</span>
                     </span>
                     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
                         <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-500"></i>
-                        <span>3D CNN Classification</span>
+                        <span>Live Joint-Angle Measurements</span>
                     </span>
                     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
                         <i data-lucide="trending-up" class="w-3.5 h-3.5 text-emerald-500"></i>
-                        <span>Biomechanical Regression</span>
+                        <span>On-Device Movement Observations</span>
                     </span>
                     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-900/70 text-slate-700 dark:text-slate-300">
                         <i data-lucide="volume-2" class="w-3.5 h-3.5 text-emerald-500"></i>
@@ -393,7 +393,7 @@
                             </button>
                         </div>
                         <p id="mode-description" class="text-[11px] text-slate-500 dark:text-slate-400 mt-2 px-1 leading-relaxed">
-                            Simulates real-time pose tracking, biomechanical regression metrics & injury prevention tips.
+                            Uses live camera landmarks and measured joint-angle estimates when your camera is running.
                         </p>
                     </div>
 
@@ -424,7 +424,7 @@
                     <div class="p-3.5 border-t border-slate-200/80 dark:border-emerald-950/80 flex items-center justify-between bg-slate-50/50 dark:bg-[#0b130f]/60">
                         <div class="flex items-center gap-2">
                             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">Pose • Class • Regress</span>
+                            <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">Pose • Angles • Feedback</span>
                         </div>
                         <button onclick="toggleDarkMode()" title="Toggle Light/Dark Theme" class="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-200/60 dark:hover:bg-[#16241d] transition-colors cursor-pointer">
                             <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
@@ -433,9 +433,64 @@
                     </div>
                 </aside>
 
-                <!-- Main Chat Area -->
-                <div class="flex-1 flex flex-col h-full min-w-0 bg-slate-50 dark:bg-[#0b130f] pitch-grid relative">
-                    
+                <!-- Main Workspace: live camera + existing full chat application -->
+                <div class="flex-1 flex flex-col lg:flex-row h-full min-w-0 min-h-0 bg-slate-50 dark:bg-[#0b130f] pitch-grid relative">
+
+                    <!-- LIVE CAMERA / MEDIAPIPE PANEL -->
+                    <section class="w-full lg:w-[42%] xl:w-[40%] shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-emerald-950/80 bg-white/70 dark:bg-[#0b130f]/90 p-3 sm:p-4 overflow-y-auto">
+                        <div class="flex items-center justify-between gap-2 mb-3">
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-900 dark:text-white">Live Pose Tracking</h3>
+                                <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Processed locally in your browser</p>
+                            </div>
+                            <span id="pose-engine-status" class="text-[10px] font-mono px-2 py-1 rounded-lg border border-amber-500/25 bg-amber-500/10 text-amber-500">MODEL NOT LOADED</span>
+                        </div>
+
+                        <div id="tactiq-camera-stage" class="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-black border border-emerald-900/50">
+                            <video id="tactiq-camera-video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover" style="transform:scaleX(-1)"></video>
+                            <canvas id="tactiq-pose-canvas" class="absolute inset-0 w-full h-full pointer-events-none" style="transform:scaleX(-1)"></canvas>
+                            <div id="tactiq-camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-center p-5 bg-[#060a08]">
+                                <i data-lucide="camera" class="w-10 h-10 text-[#00f59b] mb-3"></i>
+                                <p class="text-sm font-semibold text-white">Camera is off</p>
+                                <p class="text-[11px] text-slate-400 mt-1">Start the camera and stand far enough away for your full body to be visible.</p>
+                            </div>
+                            <div class="absolute top-2 left-2 flex items-center gap-1.5 bg-black/60 rounded-md px-2 py-1">
+                                <span id="tactiq-pose-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                <span id="tactiq-pose-label" class="text-[9px] font-mono text-white">WAITING</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2 mt-3">
+                            <button id="tactiq-start-camera" type="button" onclick="startTactiqCamera()" class="rounded-lg bg-[#00f59b] hover:bg-emerald-300 text-slate-950 font-bold text-xs py-2.5 px-3"><i data-lucide="video" class="w-3.5 h-3.5 inline mr-1"></i>Start Camera</button>
+                            <button id="tactiq-stop-camera" type="button" onclick="stopTactiqCamera()" disabled class="rounded-lg bg-slate-100 dark:bg-[#16241d] border border-slate-200 dark:border-emerald-950 text-slate-600 dark:text-slate-300 font-semibold text-xs py-2.5 px-3 disabled:opacity-40"><i data-lucide="video-off" class="w-3.5 h-3.5 inline mr-1"></i>Stop Camera</button>
+                        </div>
+
+                        <div class="mt-4 flex items-center justify-between mb-2">
+                            <h4 class="text-[10px] font-mono uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400">Live measurements</h4>
+                            <span class="text-[9px] font-mono text-slate-400">2D ESTIMATES</span>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2">
+                            <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2.5"><div class="text-[9px] text-slate-400">Left Knee</div><div id="tactiq-left-knee" class="text-lg font-mono font-bold text-[#00f59b]">--°</div></div>
+                            <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2.5"><div class="text-[9px] text-slate-400">Right Knee</div><div id="tactiq-right-knee" class="text-lg font-mono font-bold text-[#00f59b]">--°</div></div>
+                            <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2.5"><div class="text-[9px] text-slate-400">Left Hip</div><div id="tactiq-left-hip" class="text-lg font-mono font-bold text-[#00f59b]">--°</div></div>
+                            <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2.5"><div class="text-[9px] text-slate-400">Right Hip</div><div id="tactiq-right-hip" class="text-lg font-mono font-bold text-[#00f59b]">--°</div></div>
+                            <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2.5"><div class="text-[9px] text-slate-400">Torso Lean</div><div id="tactiq-torso-lean" class="text-lg font-mono font-bold text-[#00f59b]">--°</div></div>
+                            <div class="rounded-lg border border-emerald-900/30 bg-[#111c16] p-2.5"><div class="text-[9px] text-slate-400">Visibility</div><div id="tactiq-confidence" class="text-lg font-mono font-bold text-[#00f59b]">--%</div></div>
+                        </div>
+
+                        <div class="mt-3 rounded-xl border border-emerald-900/40 bg-emerald-500/5 p-3">
+                            <div class="flex items-center justify-between mb-1.5"><span class="text-[10px] font-bold text-emerald-500">LIVE OBSERVATION</span><span class="text-[9px] font-mono text-slate-500">MEASURED DATA</span></div>
+                            <p id="tactiq-live-observation" class="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">Start your camera to begin detecting visible body landmarks.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 mt-3">
+                            <button type="button" onclick="sendTactiqMeasurementsToChat()" class="text-[10px] font-semibold rounded-lg px-3 py-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">Analyze Measurements</button>
+                            <button type="button" onclick="speakTactiqCue()" class="text-[10px] font-semibold rounded-lg px-3 py-2 bg-slate-100 dark:bg-[#16241d] border border-slate-200 dark:border-emerald-950 text-slate-600 dark:text-slate-300"> <i data-lucide="volume-2" class="w-3 h-3 inline mr-1"></i>Speak Cue</button>
+                        </div>
+                        <p class="text-[9px] text-slate-400 mt-3 leading-relaxed">Camera frames are processed in this browser and are not uploaded by this page. Angles are approximate 2D estimates, not a medical assessment or trained soccer-technique score.</p>
+                    </section>
+
+                    <!-- Existing Chat Application Column -->
+                    <div class="flex-1 flex flex-col h-full min-w-0 min-h-0 bg-slate-50 dark:bg-[#0b130f] pitch-grid relative">
                     <!-- Workspace Top Bar -->
                     <div class="h-14 px-4 sm:px-6 border-b border-slate-200/80 dark:border-emerald-950/80 bg-white/85 dark:bg-[#111c16]/85 backdrop-blur-md flex items-center justify-between shrink-0 z-10">
                         <div class="flex items-center gap-3 min-w-0">
@@ -480,19 +535,19 @@
                                     </div>
                                     <h3 id="welcome-heading" class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Train Smarter. Build Zero Bad Habits.</h3>
                                     <p id="welcome-subtitle" class="text-sm text-slate-600 dark:text-slate-400">
-                                        Get instant biomechanical feedback, joint-angle diagnostics, and injury-prevention drills for injury-free execution.
+                                        Get on-device pose tracking, selected joint-angle estimates, and practical solo training guidance.
                                     </p>
                                 </div>
 
                                 <!-- ML Pipeline Mini-Pill Strip -->
                                 <div class="flex flex-wrap items-center justify-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">1. MediaPipe / YOLOv8-Pose</span>
+                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">1. MediaPipe Pose Landmarker</span>
                                     <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-500"></i>
                                     <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">2. Dim. Reduction</span>
                                     <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-500"></i>
-                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">3. 3D CNN Classification</span>
+                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">3. Future Action Classifier</span>
                                     <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-500"></i>
-                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">4. Biomechanical Regression</span>
+                                    <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111c16] border border-slate-200 dark:border-emerald-950">4. Future ML Evaluation</span>
                                 </div>
 
                                 <!-- Dynamic Suggested Prompts Grid -->
@@ -561,10 +616,11 @@
                                 </button>
                             </form>
                             <p class="text-[11px] text-center text-slate-400 dark:text-slate-500 mt-2">
-                                AI Soccer Coach • Powered by Pose Estimation, Classification & Biomechanical Regression
+                                TACTIQ • On-device pose estimation and rule-based coaching. No AI API key required.
                             </p>
                         </div>
                     </div>
+                    </div><!-- end existing chat column -->
                 </div>
             </div>
         </div>
@@ -618,7 +674,7 @@
                         <span class="text-xs font-mono uppercase tracking-wider text-emerald-500 font-bold">Under The Hood</span>
                         <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-1">4-Stage CV & ML Pipeline</h2>
                         <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-2">
-                            Combining pose estimation, dimensionality reduction, spatiotemporal action classification, and continuous biomechanical regression.
+                            The current prototype performs browser-based pose estimation and selected feature calculations. Soccer-specific classification and regression are planned future stages.
                         </p>
                     </div>
                     <button onclick="toggleBlueprintModal(true)" class="self-start sm:self-auto inline-flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 px-4 py-2.5 rounded-xl transition-colors cursor-pointer">
@@ -637,7 +693,7 @@
                             </div>
                             <h3 class="font-bold text-base text-slate-900 dark:text-white">Pose Estimation & Keypoints</h3>
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-                                Uses <strong>MediaPipe</strong> and <strong>YOLOv8-Pose</strong> to extract 2D/3D skeletal joint coordinates (ankles, knees, hips, shoulders) directly from practice video.
+                                Uses <strong>MediaPipe Pose Landmarker</strong> in the browser to estimate visible body landmarks from the live camera feed.
                             </p>
                         </div>
                         <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-emerald-950 text-[11px] font-mono text-slate-500 dark:text-slate-400">
@@ -671,11 +727,11 @@
                             </div>
                             <h3 class="font-bold text-base text-slate-900 dark:text-white">Action Classification</h3>
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-                                <strong>3D CNNs & Video Transformers</strong> trained on SoccerNet, Kinetics-400, and custom solo drills classify the skill move and form quality.
+                                A future soccer-specific classifier could use labeled custom drill clips to recognize skill phases. This model is not implemented in the current prototype.
                             </p>
                         </div>
                         <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-emerald-950 text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                            Labels: Proper / Needs Fix / Injury Risk
+                            Future stage — requires labeled data and validation
                         </div>
                     </div>
 
@@ -688,7 +744,7 @@
                             </div>
                             <h3 class="font-bold text-base text-slate-900 dark:text-white">Biomechanical Regression</h3>
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-                                Predicts continuous metrics including limb angular velocity, joint-angle accuracy, execution success probability, and ACL/ankle strain risk.
+                                A future regression model could estimate validated performance metrics from labeled examples. The current app does not calculate success probabilities or injury risk.
                             </p>
                         </div>
                         <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-emerald-950 text-[11px] font-mono text-slate-500 dark:text-slate-400">
@@ -813,7 +869,7 @@
                     </div>
                     <div>
                         <h3 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">Drill & Biomechanics Analyzer</h3>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400">Simulated Pose Estimation + Regression Diagnostic</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">Uses your notes and real camera estimates when available</p>
                     </div>
                 </div>
                 <button onclick="closeDrillModal()" class="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-200/50 dark:hover:bg-[#111c16] cursor-pointer">
@@ -917,12 +973,12 @@
                         <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
                             <span class="text-[11px] font-mono text-emerald-500 font-semibold">STAGE 03 • CLASSIFICATION</span>
                             <p class="font-semibold text-slate-900 dark:text-white mt-0.5">3D CNNs / Video Transformers</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Identifies the drill move and classifies technique quality (proper vs. improper form).</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Planned stage: train a soccer-specific classifier using labeled practice clips. Not implemented yet.</p>
                         </div>
                         <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b130f] border border-slate-200 dark:border-emerald-950">
                             <span class="text-[11px] font-mono text-emerald-500 font-semibold">STAGE 04 • REGRESSION</span>
                             <p class="font-semibold text-slate-900 dark:text-white mt-0.5">Biomechanical Scoring</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Predicts continuous metrics: limb velocity, joint angle accuracy, injury risk & success probability.</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Planned stage: evaluate validated movement features. The current app does not predict injury risk or success probability.</p>
                         </div>
                     </div>
                 </div>
@@ -965,12 +1021,334 @@
         </div>
     </div>
 
+    <script type="module">
+        import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+        const video = document.getElementById('tactiq-camera-video');
+        const canvas = document.getElementById('tactiq-pose-canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('pose-engine-status');
+        const startButton = document.getElementById('tactiq-start-camera');
+        const stopButton = document.getElementById('tactiq-stop-camera');
+        const placeholder = document.getElementById('tactiq-camera-placeholder');
+        let landmarker = null;
+        let stream = null;
+        let running = false;
+        let rafId = null;
+        let lastVideoTime = -1;
+        let lastCue = 'Stay balanced. Move with control.';
+
+        window.tactiqPoseMeasurements = {
+            leftKnee: null, rightKnee: null, leftHip: null,
+            rightHip: null, torsoLean: null, confidence: null, timestamp: null
+        };
+
+        function setEngineStatus(message, state = 'neutral') {
+            statusEl.textContent = message;
+            const styles = {
+                ready: 'text-[10px] font-mono px-2 py-1 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-500',
+                error: 'text-[10px] font-mono px-2 py-1 rounded-lg border border-rose-500/25 bg-rose-500/10 text-rose-500',
+                loading: 'text-[10px] font-mono px-2 py-1 rounded-lg border border-amber-500/25 bg-amber-500/10 text-amber-500',
+                neutral: 'text-[10px] font-mono px-2 py-1 rounded-lg border border-slate-500/25 bg-slate-500/10 text-slate-500'
+            };
+            statusEl.className = styles[state] || styles.neutral;
+        }
+
+        async function loadPoseModel() {
+            if (landmarker) return landmarker;
+            setEngineStatus('LOADING MODEL', 'loading');
+
+            const vision = await FilesetResolver.forVisionTasks(
+                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+            );
+            const modelAssetPath = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+            const options = {
+                runningMode: 'VIDEO',
+                numPoses: 1,
+                minPoseDetectionConfidence: 0.5,
+                minPosePresenceConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            };
+
+            try {
+                landmarker = await PoseLandmarker.createFromOptions(vision, {
+                    ...options,
+                    baseOptions: { modelAssetPath, delegate: 'GPU' }
+                });
+            } catch (gpuError) {
+                console.warn('MediaPipe GPU initialization failed; trying CPU.', gpuError);
+                landmarker = await PoseLandmarker.createFromOptions(vision, {
+                    ...options,
+                    baseOptions: { modelAssetPath, delegate: 'CPU' }
+                });
+            }
+
+            setEngineStatus('MODEL READY', 'ready');
+            return landmarker;
+        }
+
+        function waitForVideoMetadata() {
+            if (video.readyState >= 1 && video.videoWidth > 0) return Promise.resolve();
+            return new Promise((resolve, reject) => {
+                const onLoaded = () => { cleanup(); resolve(); };
+                const onError = () => { cleanup(); reject(new Error('The camera video could not be started.')); };
+                const cleanup = () => {
+                    video.removeEventListener('loadedmetadata', onLoaded);
+                    video.removeEventListener('error', onError);
+                };
+                video.addEventListener('loadedmetadata', onLoaded, { once: true });
+                video.addEventListener('error', onError, { once: true });
+            });
+        }
+
+        window.startTactiqCamera = async function () {
+            if (running || startButton.disabled) return;
+            startButton.disabled = true;
+            setEngineStatus('REQUESTING CAMERA', 'loading');
+
+            try {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    throw new Error('Camera access requires HTTPS (GitHub Pages works) or localhost, plus a supported browser.');
+                }
+
+                // Ask for camera permission first, then load the pose model.
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30, max: 30 }
+                    }
+                });
+
+                video.srcObject = stream;
+                await waitForVideoMetadata();
+                await video.play();
+                await loadPoseModel();
+
+                running = true;
+                lastVideoTime = -1;
+                placeholder.classList.add('hidden');
+                stopButton.disabled = false;
+                fitCanvas();
+                window.addEventListener('resize', fitCanvas);
+                stream.getVideoTracks().forEach(track => {
+                    track.addEventListener('ended', () => {
+                        if (running) window.stopTactiqCamera();
+                    }, { once: true });
+                });
+                processFrame();
+                if (typeof showToast === 'function') showToast('Camera started — pose tracking active');
+            } catch (err) {
+                console.error('TACTIQ camera startup failed:', err);
+                const message = err?.name === 'NotAllowedError'
+                    ? 'Camera permission was blocked. Allow camera access in your browser, then try again.'
+                    : err?.name === 'NotFoundError'
+                        ? 'No camera was found on this device.'
+                        : err?.message || 'Could not start the camera or load the pose model.';
+                setEngineStatus('CAMERA / MODEL ERROR', 'error');
+                if (typeof showToast === 'function') showToast(message);
+                window.stopTactiqCamera(false);
+                startButton.disabled = false;
+            }
+        };
+
+        window.stopTactiqCamera = function (resetStatus = true) {
+            running = false;
+            if (rafId !== null) cancelAnimationFrame(rafId);
+            rafId = null;
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            stream = null;
+            video.pause();
+            video.srcObject = null;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            placeholder.classList.remove('hidden');
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            window.removeEventListener('resize', fitCanvas);
+            document.getElementById('tactiq-pose-label').textContent = 'WAITING';
+            document.getElementById('tactiq-pose-dot').className = 'w-1.5 h-1.5 rounded-full bg-slate-500';
+            document.getElementById('tactiq-live-observation').textContent = 'Start your camera to begin detecting visible body landmarks.';
+            setMeasurements({
+                leftKnee: null, rightKnee: null, leftHip: null,
+                rightHip: null, torsoLean: null, confidence: null, timestamp: null
+            });
+            if (resetStatus && landmarker) setEngineStatus('MODEL READY', 'ready');
+            else if (resetStatus) setEngineStatus('MODEL NOT LOADED', 'neutral');
+        };
+
+        function fitCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            canvas.width = Math.round(rect.width * dpr);
+            canvas.height = Math.round(rect.height * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        // The video uses object-fit: cover. Map normalized landmarks into the
+        // same centered crop so the skeleton remains aligned on wide webcams.
+        function getCoverTransform() {
+            const stageWidth = canvas.clientWidth;
+            const stageHeight = canvas.clientHeight;
+            const sourceWidth = video.videoWidth || stageWidth;
+            const sourceHeight = video.videoHeight || stageHeight;
+            const sourceAspect = sourceWidth / sourceHeight;
+            const stageAspect = stageWidth / stageHeight;
+            if (sourceAspect > stageAspect) {
+                const visibleWidth = stageAspect / sourceAspect;
+                return { x: (x) => (x - (1 - visibleWidth) / 2) / visibleWidth, y: (y) => y };
+            }
+            const visibleHeight = sourceAspect / stageAspect;
+            return { x: (x) => x, y: (y) => (y - (1 - visibleHeight) / 2) / visibleHeight };
+        }
+
+        const links = [
+            [11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],
+            [23,24],[23,25],[25,27],[24,26],[26,28],[27,29],[29,31],
+            [28,30],[30,32],[27,31],[28,32]
+        ];
+
+        function drawSkeleton(lm) {
+            const w = canvas.clientWidth;
+            const h = canvas.clientHeight;
+            const map = getCoverTransform();
+            const point = (p) => ({ x: map.x(p.x) * w, y: map.y(p.y) * h });
+            ctx.clearRect(0, 0, w, h);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#00f59b';
+            ctx.lineCap = 'round';
+
+            for (const [aIndex, bIndex] of links) {
+                const a = lm[aIndex], b = lm[bIndex];
+                if (!a || !b || (a.visibility ?? 1) < 0.45 || (b.visibility ?? 1) < 0.45) continue;
+                const pa = point(a), pb = point(b);
+                ctx.beginPath();
+                ctx.moveTo(pa.x, pa.y);
+                ctx.lineTo(pb.x, pb.y);
+                ctx.stroke();
+            }
+
+            lm.forEach((pt, i) => {
+                if (!pt || (pt.visibility ?? 1) < 0.45) return;
+                const p = point(pt);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, i >= 23 && i <= 28 ? 4.5 : 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            });
+        }
+
+        function angleAt(a, b, c) {
+            if (!a || !b || !c) return null;
+            const abx = a.x - b.x, aby = a.y - b.y;
+            const cbx = c.x - b.x, cby = c.y - b.y;
+            const denominator = Math.hypot(abx, aby) * Math.hypot(cbx, cby);
+            if (!denominator) return null;
+            const cosine = Math.max(-1, Math.min(1, (abx * cbx + aby * cby) / denominator));
+            return Math.round(Math.acos(cosine) * 180 / Math.PI);
+        }
+
+        function midpoint(a, b) {
+            return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null;
+        }
+
+        function torsoLean(shoulders, hips) {
+            if (!shoulders || !hips) return null;
+            return Math.round(Math.atan2(shoulders.x - hips.x, hips.y - shoulders.y) * 180 / Math.PI);
+        }
+
+        function good(point) {
+            return !!point && (point.visibility ?? 1) >= 0.5;
+        }
+
+        function setMeasurements(m) {
+            window.tactiqPoseMeasurements = m;
+            const ids = {
+                leftKnee: 'tactiq-left-knee', rightKnee: 'tactiq-right-knee',
+                leftHip: 'tactiq-left-hip', rightHip: 'tactiq-right-hip',
+                torsoLean: 'tactiq-torso-lean'
+            };
+            for (const [key, id] of Object.entries(ids)) {
+                document.getElementById(id).textContent = m[key] == null ? '--°' : m[key] + '°';
+            }
+            document.getElementById('tactiq-confidence').textContent = m.confidence == null ? '--%' : m.confidence + '%';
+        }
+
+        function analyzeLandmarks(lm) {
+            const ls = lm[11], rs = lm[12], lh = lm[23], rh = lm[24];
+            const lk = lm[25], rk = lm[26], la = lm[27], ra = lm[28];
+            const leftKnee = [lh, lk, la].every(good) ? angleAt(lh, lk, la) : null;
+            const rightKnee = [rh, rk, ra].every(good) ? angleAt(rh, rk, ra) : null;
+            const leftHip = [ls, lh, lk].every(good) ? angleAt(ls, lh, lk) : null;
+            const rightHip = [rs, rh, rk].every(good) ? angleAt(rs, rh, rk) : null;
+            const visible = [ls, rs, lh, rh, lk, rk, la, ra].filter(good);
+            const confidence = visible.length
+                ? Math.round(visible.reduce((sum, point) => sum + (point.visibility ?? 1), 0) / visible.length * 100)
+                : null;
+            const lean = torsoLean(midpoint(ls, rs), midpoint(lh, rh));
+            setMeasurements({ leftKnee, rightKnee, leftHip, rightHip, torsoLean: lean, confidence, timestamp: Date.now() });
+
+            const notes = [];
+            if (confidence !== null && confidence < 65) notes.push('Some landmarks are uncertain. Improve lighting and make sure your whole body is visible.');
+            if (leftKnee !== null && rightKnee !== null && Math.abs(leftKnee - rightKnee) > 25) {
+                notes.push('The left and right knee estimates differ in this frame. Check camera placement and compare several repetitions; this alone does not indicate a problem.');
+            }
+            if (lean !== null && Math.abs(lean) > 20) {
+                notes.push('Your torso is angled from vertical in this frame. The useful position depends on the drill and movement phase.');
+            }
+            if (!notes.length) notes.push('Pose detected. Keep your full body in frame and compare several frames throughout the movement.');
+            document.getElementById('tactiq-live-observation').textContent = notes.join(' ');
+            lastCue = notes[0];
+        }
+
+        function processFrame() {
+            if (!running || !landmarker) return;
+            if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                try {
+                    const result = landmarker.detectForVideo(video, performance.now());
+                    if (result.landmarks?.length) {
+                        drawSkeleton(result.landmarks[0]);
+                        analyzeLandmarks(result.landmarks[0]);
+                        document.getElementById('tactiq-pose-label').textContent = 'POSE DETECTED';
+                        document.getElementById('tactiq-pose-dot').className = 'w-1.5 h-1.5 rounded-full bg-[#00f59b]';
+                    } else {
+                        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+                        document.getElementById('tactiq-pose-label').textContent = 'NO POSE';
+                        document.getElementById('tactiq-pose-dot').className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+                        document.getElementById('tactiq-live-observation').textContent = 'No pose detected. Move farther back and ensure your full body is visible.';
+                        setMeasurements({
+                            leftKnee: null, rightKnee: null, leftHip: null,
+                            rightHip: null, torsoLean: null, confidence: null, timestamp: Date.now()
+                        });
+                    }
+                } catch (err) {
+                    console.error('Pose detection error:', err);
+                    document.getElementById('tactiq-live-observation').textContent = 'Pose tracking hit an error. Try restarting the camera.';
+                }
+            }
+            rafId = requestAnimationFrame(processFrame);
+        }
+
+        window.speakTactiqCue = function () {
+            if (!('speechSynthesis' in window)) {
+                if (typeof showToast === 'function') showToast('Speech is not supported in this browser');
+                return;
+            }
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(lastCue));
+        };
+
+        window.addEventListener('beforeunload', () => {
+            if (stream) stream.getTracks().forEach(track => track.stop());
+        });
+    </script>
+
     <script>
         // ==========================================
         // STATE & CONFIGURATION
         // ==========================================
-        const apiKey = ""; // Canvas provides the API key automatically at runtime
-        const MODEL_NAME = "gemini-3-flash-preview";
         const STORAGE_KEY = "ai_soccer_coach_sessions_v1";
         const THEME_KEY = "ai_soccer_coach_theme";
         const LOGO_STORAGE_KEY = "tactiq_custom_logo_data_v1";
@@ -982,33 +1360,10 @@
         let confirmClearAll = false;
         let clearAllTimeout = null;
 
-        // Domain-specific System Prompts
+        // This build uses browser-local coaching rules. No Gemini key or backend is required.
         const SYSTEM_PROMPTS = {
-            coach: `You are **AI Soccer Coach**, an elite virtual soccer biomechanics coach and computer-vision training assistant created by the Launchpad Project Team.
-Your mission is to help ambitious youth soccer players training solo avoid building bad habits, maximize practice efficiency, and prevent injuries.
-
-When a player describes a drill, miss, or movement issue (or submits a Drill Analyzer report), respond like a real-time AI coaching system backed by Pose Estimation (MediaPipe/YOLOv8-Pose), Action Classification (3D CNN), and Skill Regression:
-1. **Simulated AI Telemetry Snapshot** (include a crisp Markdown table or bullet block with estimated metrics: *Detected Action*, *Form Classification* [Proper / Needs Adjustment / High Injury Risk], *Key Joint Angles* [e.g., Plant Knee Flexion, Torso Lean, Hip Rotation], *Execution Success Probability %*, and *Injury Risk Score* [Low/Moderate/High]).
-2. **Biomechanical Root Cause**: Clearly explain *why* the miss or risk occurs based on body mechanics (plant foot placement, ankle lock, center of gravity, knee valgus, follow-through).
-3. **Actionable Solo Fix & Audio Cue**: Give 2–3 concrete corrective steps and a short 3-word hands-free audio cue they can repeat during their next 10 solo reps.
-4. **Safety Check**: Flag any ACL, ankle, or groin strain risks if relevant.
-
-Keep responses energetic, encouraging, structured, and easy to scan on a phone screen between drills.`,
-
-            builder: `You are the **AI Technical Mentor & Product Partner** for the **Launchpad Project Team**, a high school student team building **AI Soccer Coach** for their Launchpad project.
-
-Here is their exact project context:
-- **Core Problem**: Ambitious youth soccer players training solo build bad habits, waste practice time, and risk injury because they lack immediate, objective feedback on skill execution.
-- **ML/CV Pipeline**:
-  1. *Pose Estimation*: MediaPipe or YOLOv8-pose to extract skeletal keypoints from smartphone video.
-  2. *Dimensionality Reduction*: PCA / feature selection to compress dense frame-by-frame joint data for real-time mobile inference.
-  3. *Action Classification*: 3D CNNs or Video Transformers to classify the skill move (shooting, passing, dribbling, landing) and form quality (proper vs. improper).
-  4. *Skill Regression*: Continuous biomechanical scoring (limb speed, joint angle accuracy, injury risk, execution success probability).
-- **Datasets**: SoccerNet, Kinetics-400, and custom recorded solo drills.
-- **Ethics & Safety**: Privacy-first skeletal processing (not storing raw youth faces/videos unnecessarily), testing across diverse body types/heights/ages, and injury-preventive coaching.
-- **Open Challenges & Needs**: Choosing the right software stack/platforms, backend APIs/SaaS, handling outdoor lighting/camera angles, mobile latency/overheating, and hands-free audio feedback.
-
-Help the Project Team make concrete, achievable engineering, dataset, UX, ethics, and pitch decisions. Give practical, step-by-step recommendations tailored to a student team building a working, judge-ready prototype.`
+            coach: `You are TACTIQ's local soccer practice assistant. Never invent camera readings, action classifications, success probabilities, or injury-risk scores. Only quote joint angles included in the user's message. Explain that the browser pose model estimates visible landmarks and that the current prototype does not classify soccer technique or diagnose injuries. Give practical, age-appropriate training suggestions and remind the player to stop if something hurts.`,
+            builder: `You are TACTIQ's Launchpad technical mentor. The current prototype uses MediaPipe Pose Landmarker in the browser, JavaScript feature calculations, and transparent rule-based observations. Do not claim a trained soccer-action classifier, regression model, or injury predictor exists. Help the team plan datasets, labeling, validation, privacy, camera calibration, and future ML stages with realistic implementation steps.`
         };
 
         // Mode-Specific Suggested Prompts & Quick Chips
@@ -1016,7 +1371,7 @@ Help the Project Team make concrete, achievable engineering, dataset, UX, ethics
             coach: {
                 badgeText: "COACH",
                 placeholder: "Describe your solo drill or ask for biomechanics & form feedback...",
-                description: "Simulates real-time pose tracking, biomechanical regression metrics & injury prevention tips.",
+                description: "Uses live camera landmarks and measured joint-angle estimates when your camera is running.",
                 welcomeHeading: "Train Smarter. Build Zero Bad Habits.",
                 suggestions: [
                     {
@@ -1143,6 +1498,10 @@ Help the Project Team make concrete, achievable engineering, dataset, UX, ethics
                     this.onerror = null;
                     this.src = createFallbackTactiqBadge();
                 };
+                if (!img.complete || img.naturalWidth === 0) {
+                    // Keep the project-folder TACTIQ crest as the default source.
+                    img.src = img.getAttribute('src') || '0c75b695-1250-4609-be76-fa0d25ae6f8f.png';
+                }
             });
         }
 
@@ -1160,6 +1519,8 @@ Help the Project Team make concrete, achievable engineering, dataset, UX, ethics
         function handleLogoFileUpload(event) {
             const file = event.target.files?.[0];
             if (!file) return;
+            if (!file.type.startsWith('image/')) { showToast('Please choose an image file'); return; }
+            if (file.size > 2 * 1024 * 1024) { showToast('Choose a logo smaller than 2 MB'); event.target.value = ''; return; }
             const reader = new FileReader();
             reader.onload = function(e) {
                 const dataUrl = e.target?.result;
@@ -1170,10 +1531,11 @@ Help the Project Team make concrete, achievable engineering, dataset, UX, ethics
                     } catch (err) {
                         // Ignore storage quota if image is very large
                     }
-                    showToast("TACTIQ logo updated");
+                    showToast("TACTIQ logo updated and saved on this device");
                 }
             };
             reader.readAsDataURL(file);
+            event.target.value = '';
         }
 
         function createFallbackTactiqBadge() {
@@ -1543,7 +1905,7 @@ Help the Project Team make concrete, achievable engineering, dataset, UX, ethics
 • Training Goal: ${goal}
 • Player Observation: "${notes}"
 
-Please run a full AI Soccer Coach biomechanical evaluation (Pose Estimation keypoints, Action Classification, Regression metrics, root cause fix, and a 3-word audio cue).`;
+Please give practical coaching guidance using only the supplied observations and the latest real camera measurements, if available. Do not invent action classifications, success probabilities, or injury-risk scores. Explain the limits of 2D pose estimates.`;
 
             scrollToCoachAndSuggest(structuredPrompt);
         }
@@ -1621,7 +1983,7 @@ Please run a full AI Soccer Coach biomechanical evaluation (Pose Estimation keyp
             scrollToBottom();
 
             try {
-                const replyText = await callGeminiAPI(conv.messages);
+                const replyText = localTactiqCoachResponse(text);
                 loadingIndicatorEl.classList.add('hidden');
                 conv.messages.push({ role: 'model', text: replyText });
                 conv.updatedAt = Date.now();
@@ -1630,7 +1992,7 @@ Please run a full AI Soccer Coach biomechanical evaluation (Pose Estimation keyp
                 appendMessageBubble('model', replyText, true);
             } catch (error) {
                 loadingIndicatorEl.classList.add('hidden');
-                const errorMsg = "I'm having trouble connecting to the AI Soccer Coach engine right now. Please try sending your message again.";
+                const errorMsg = "The local coaching response could not be generated. Please try again.";
                 appendMessageBubble('model', errorMsg, true);
             } finally {
                 isGenerating = false;
@@ -1640,56 +2002,128 @@ Please run a full AI Soccer Coach biomechanical evaluation (Pose Estimation keyp
         }
 
         // ==========================================
-        // GEMINI API INTEGRATION (WITH EXPONENTIAL BACKOFF)
+        // LOCAL COACHING ENGINE (NO AI API REQUIRED)
         // ==========================================
-        async function callGeminiAPI(messageHistory) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
+        function localTactiqCoachResponse(message) {
+            const q = String(message || '').toLowerCase();
+            const m = window.tactiqPoseMeasurements || {};
+            const hasData = m.confidence !== null && m.confidence !== undefined;
+            const measurements = hasData ? `
 
-            const contents = messageHistory.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.text }]
-            }));
+**Latest camera measurements**
 
-            const payload = {
-                contents: contents,
-                systemInstruction: {
-                    parts: [{
-                        text: SYSTEM_PROMPTS[currentMode]
-                    }]
-                }
-            };
+| Measurement | Estimate |
+|---|---:|
+| Left knee | ${m.leftKnee == null ? 'Not visible' : m.leftKnee + '°'} |
+| Right knee | ${m.rightKnee == null ? 'Not visible' : m.rightKnee + '°'} |
+| Left hip | ${m.leftHip == null ? 'Not visible' : m.leftHip + '°'} |
+| Right hip | ${m.rightHip == null ? 'Not visible' : m.rightHip + '°'} |
+| Torso lean | ${m.torsoLean == null ? 'Not visible' : m.torsoLean + '°'} |
+| Landmark visibility | ${m.confidence}% |
 
-            const maxRetries = 4;
-            const delays = [1000, 2000, 4000, 8000];
+These are estimates from the latest visible frame, not a technique grade.` : `\n\nNo live camera measurements are available yet. Start the camera and select **Analyze Measurements** to include detected values.`;
 
-            for (let attempt = 0; attempt <= maxRetries; attempt++) {
-                try {
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+            if (currentMode === 'builder') {
+                if (q.includes('dataset') || q.includes('train') || q.includes('label')) return `## Building a TACTIQ Dataset
 
-                    if (!response.ok) {
-                        throw new Error(`HTTP error ${response.status}`);
-                    }
+1. Pick one skill and define exactly what the model should recognize.
+2. Record many repetitions from front, side, and 45-degree views, with permission from participants.
+3. Label each clip consistently, including uncertain or unusable examples.
+4. Split training, validation, and test sets by player so the same person does not appear in every split.
+5. Compare model predictions with independent coach ratings and report limitations.
 
-                    const result = await response.json();
-                    const candidate = result.candidates?.[0];
-                    const text = candidate?.content?.parts?.[0]?.text;
+MediaPipe supplies pose landmarks; it does not supply soccer-technique labels automatically.`;
+                if (q.includes('mediapipe') || q.includes('pose') || q.includes('camera')) return `## Current TACTIQ Computer-Vision Stack
 
-                    if (text) {
-                        return text;
-                    } else {
-                        throw new Error("Empty response from model");
-                    }
-                } catch (err) {
-                    if (attempt === maxRetries) {
-                        throw err;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-                }
+- **Camera:** browser \`getUserMedia()\` permission.
+- **Pose estimation:** MediaPipe Pose Landmarker in VIDEO mode.
+- **Overlay:** canvas draws the detected skeleton over the video.
+- **Feature extraction:** JavaScript calculates selected 2D joint angles.
+- **Feedback:** local rules summarize measured values without fabricated scores.
+
+The camera frames stay in the browser in this implementation. The MediaPipe library and model are downloaded from their public hosts. The next ML stage is a labeled soccer-specific classifier, which is not implemented yet.`;
+                return `## TACTIQ MVP Status
+
+**Implemented in this version:** browser camera, MediaPipe pose landmarks, skeleton overlay, selected joint-angle calculations, visibility estimate, local coaching rules, logo upload/persistence, theme toggle, chat history, and the project blueprint.
+
+**Future work:** collect a consented soccer-specific dataset, label skill phases, train a lightweight classifier, evaluate it on players not used for training, and optimize performance on phones.
+
+Do not present the current prototype as a trained soccer classifier or injury-prediction system.`;
             }
+
+            if (q.includes('measurement') || q.includes('camera') || q.includes('pose') || q.includes('angle') || q.includes('scan') || q.includes('biomechanic')) {
+                return `## TACTIQ Measurement Review${measurements}
+
+**How to use these values**
+1. Keep your whole body in frame and use a steady camera position.
+2. Compare multiple frames across a full repetition rather than judging one still frame.
+3. Repeat the same drill from the same camera angle for a fair comparison.
+
+The current pose tracker does not recognize shots, passes, or dribbling technique. It cannot determine injury risk or diagnose a movement problem.`;
+            }
+            if (q.includes('shot') || q.includes('shoot')) return `## Power Shot Practice
+
+1. Place your plant foot beside the ball, oriented generally toward your target.
+2. Keep your striking ankle firm through contact.
+3. Coordinate your torso position with the type of shot you want.
+4. Follow through smoothly toward your target.
+
+**Solo drill:** complete 3 sets of 5 controlled shots, focusing on clean contact before adding power.
+
+**Cue:** Plant. Lock. Follow.${measurements}`;
+            if (q.includes('pass')) return `## Passing Practice
+
+1. Aim your plant foot toward the target.
+2. Use the inside of your foot for controlled short passes.
+3. Keep the ankle firm and follow through toward the target.
+
+**Solo drill:** pass against a wall for 3 sets of 15–20 repetitions with each foot.
+
+**Cue:** Plant. Point. Pass.${measurements}`;
+            if (q.includes('dribbl') || q.includes('step-over')) return `## Dribbling Practice
+
+1. Keep touches controlled and close while approaching a cone.
+2. Practice changing direction with both feet.
+3. Push the ball into open space as you accelerate.
+
+**Solo drill:** set up two cones and complete 4 rounds of controlled changes of direction.
+
+**Cue:** Sell. Touch. Accelerate.${measurements}`;
+            if (q.includes('first touch') || q.includes('touch')) return `## First-Touch Practice
+
+1. Watch the ball as it approaches.
+2. Cushion the ball rather than letting it bounce away.
+3. Direct the first touch into space for your next action.
+
+**Solo drill:** pass against a wall, receive with one foot, and return with the other for 3 sets of 15.
+
+**Cue:** Watch. Cushion. Play.${measurements}`;
+            if (q.includes('injur') || q.includes('knee') || q.includes('pain') || q.includes('landing')) return `## Movement & Safety Notes
+
+The camera can estimate visible joint positions, but it cannot calculate your injury risk or diagnose a knee, ankle, or hip problem.
+
+For practice, prioritize controlled movement, gradual progression, and good balance. If a movement hurts or feels unstable, stop and ask a qualified coach or healthcare professional for help. Do not use one camera angle or a single joint-angle number as a safety clearance.${measurements}`;
+            return `## Let's Work on Your Game
+
+I can help with shooting, passing, dribbling, first touch, solo drills, camera setup, and the TACTIQ project. Tell me which skill you're practicing and what you'd like to improve.
+
+If your camera is running, use **Analyze Measurements** to attach the latest detected joint-angle estimates. I won't invent measurements or technique scores.`;
+        }
+
+        function sendTactiqMeasurementsToChat() {
+            const m = window.tactiqPoseMeasurements || {};
+            const text = m.confidence == null
+                ? 'Review my camera measurements. The camera is not currently detecting a pose.'
+                : `Review my latest live pose measurements: left knee ${m.leftKnee ?? 'not visible'} degrees, right knee ${m.rightKnee ?? 'not visible'} degrees, left hip ${m.leftHip ?? 'not visible'} degrees, right hip ${m.rightHip ?? 'not visible'} degrees, torso lean ${m.torsoLean ?? 'not visible'} degrees, landmark visibility ${m.confidence} percent. Explain limitations and what I should observe during repeated reps.`;
+            messageInput.value = text;
+            handleFormSubmit(new Event('submit'));
+        }
+
+        function speakTactiqCue() {
+            if (!('speechSynthesis' in window)) { showToast('Speech is not supported in this browser'); return; }
+            const cue = 'Stay balanced. Move with control.';
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(cue));
         }
 
         // ==========================================
