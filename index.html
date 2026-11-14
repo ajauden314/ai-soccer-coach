@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Soccer Coach — Real-Time Biomechanics & Virtual Training Platform</title>
+    <title>TACTIQ — AI Soccer Coach & Virtual Biomechanics Platform</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Inter & JetBrains Mono -->
@@ -30,13 +30,13 @@
                         pitch: {
                             50: '#ecfdf5',
                             100: '#d1fae5',
-                            400: '#4ade80',
-                            500: '#22c55e',
-                            600: '#16a34a',
-                            700: '#15803d',
-                            850: '#16241d',
-                            900: '#111c16',
-                            950: '#0b130f',
+                            400: '#34d399',
+                            500: '#00f59b',
+                            600: '#10b981',
+                            700: '#059669',
+                            850: '#111c17',
+                            900: '#0b130f',
+                            950: '#060a08',
                         }
                     },
                     animation: {
@@ -113,8 +113,11 @@
             margin-bottom: 0.3rem;
         }
         .prose-chat strong {
-            color: #22c55e;
+            color: #00f59b;
             font-weight: 600;
+        }
+        html:not(.dark) .prose-chat strong {
+            color: #059669;
         }
         html:not(.dark) .prose-chat strong {
             color: #15803d;
@@ -150,12 +153,15 @@
             font-size: 0.82rem;
         }
         .prose-chat code:not(pre code) {
-            background-color: rgba(34, 197, 94, 0.12);
-            color: #4ade80;
+            background-color: rgba(0, 245, 155, 0.12);
+            color: #34d399;
             padding: 0.15rem 0.35rem;
             border-radius: 0.375rem;
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.85em;
+        }
+        html:not(.dark) .prose-chat code:not(pre code) {
+            color: #059669;
         }
         html:not(.dark) .prose-chat code:not(pre code) {
             color: #15803d;
@@ -188,23 +194,34 @@
             0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
             40% { transform: scale(1); opacity: 1; }
         }
+
+        /* TACTIQ Logo Glow & Crisp Crest Framing */
+        .tactiq-logo-glow {
+            box-shadow: 0 0 24px rgba(0, 245, 155, 0.28), inset 0 0 12px rgba(0, 245, 155, 0.15);
+        }
     </style>
 </head>
-<body class="bg-slate-50 dark:bg-[#0b130f] text-slate-800 dark:text-slate-100 antialiased selection:bg-emerald-500 selection:text-slate-950 pitch-grid">
+<body class="bg-slate-50 dark:bg-[#060a08] text-slate-800 dark:text-slate-100 antialiased selection:bg-[#00f59b] selection:text-slate-950 pitch-grid">
+
+    <!-- Hidden File Input for Optional Local Logo Swap -->
+    <input type="file" id="logo-file-input" accept="image/*" class="hidden" onchange="handleLogoFileUpload(event)">
 
     <!-- ========================================== -->
     <!-- 1. TOP STICKY NAVIGATION BAR               -->
     <!-- ========================================== -->
-    <header class="sticky top-0 z-40 w-full bg-white/85 dark:bg-[#0b130f]/85 backdrop-blur-md border-b border-slate-200/80 dark:border-emerald-950/80">
+    <header class="sticky top-0 z-40 w-full bg-white/85 dark:bg-[#060a08]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-emerald-950/90">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
             <!-- Brand Logo -->
             <a href="#" class="flex items-center gap-3 group">
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-                    <i data-lucide="trophy" class="w-5 h-5 stroke-[2.2]"></i>
+                <div class="w-11 h-11 rounded-xl bg-black border border-[#00f59b]/40 overflow-hidden flex items-center justify-center shadow-md shadow-[#00f59b]/20 group-hover:scale-105 transition-transform shrink-0">
+                    <img src="0c75b695-1250-4609-be76-fa0d25ae6f8f.png" alt="TACTIQ AI Soccer Coach Logo" class="tactiq-logo-img w-full h-full object-contain">
                 </div>
                 <div class="flex items-center gap-2">
-                    <span class="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">AI Soccer Coach</span>
-                    <span class="hidden sm:inline-flex items-center text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                    <div class="flex flex-col">
+                        <span class="font-black text-base tracking-wider text-slate-900 dark:text-white leading-none">TACTI<span class="text-[#00f59b]">Q</span></span>
+                        <span class="text-[10px] font-mono uppercase tracking-widest text-slate-500 dark:text-emerald-400/80 mt-0.5">AI Soccer Coach</span>
+                    </div>
+                    <span class="hidden lg:inline-flex items-center text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#00f59b]/10 text-emerald-700 dark:text-[#00f59b] border border-[#00f59b]/30 ml-1">
                         Computer Vision & Biomechanics
                     </span>
                 </div>
@@ -212,19 +229,23 @@
 
             <!-- Desktop Smooth-Scroll Anchor Links -->
             <nav class="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                <a href="#live-coach" class="hover:text-emerald-500 transition-colors">Live AI Coach</a>
-                <a href="#how-it-works" class="hover:text-emerald-500 transition-colors">How It Works</a>
-                <a href="#cv-pipeline" class="hover:text-emerald-500 transition-colors">CV & ML Pipeline</a>
-                <a href="#ethics-safety" class="hover:text-emerald-500 transition-colors">Ethics & Safety</a>
+                <a href="#live-coach" class="hover:text-[#00f59b] transition-colors">Live AI Coach</a>
+                <a href="#how-it-works" class="hover:text-[#00f59b] transition-colors">How It Works</a>
+                <a href="#cv-pipeline" class="hover:text-[#00f59b] transition-colors">CV & ML Pipeline</a>
+                <a href="#ethics-safety" class="hover:text-[#00f59b] transition-colors">Ethics & Safety</a>
             </nav>
 
-            <!-- Right Controls: Theme Toggle + Primary CTA -->
-            <div class="flex items-center gap-2.5">
-                <button onclick="toggleDarkMode()" title="Toggle Light/Dark Theme" aria-label="Toggle Light/Dark Theme" class="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-200/60 dark:hover:bg-[#16241d] transition-colors cursor-pointer">
+            <!-- Right Controls: Logo Swap + Theme Toggle + Primary CTA -->
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="triggerLogoUpload()" title="Upload or Swap TACTIQ Logo File" aria-label="Upload or Swap Logo" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-2 text-[11px] font-mono text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-[#00f59b] rounded-xl hover:bg-slate-200/60 dark:hover:bg-[#111c17] border border-transparent dark:hover:border-[#00f59b]/25 transition-colors cursor-pointer">
+                    <i data-lucide="image-plus" class="w-3.5 h-3.5"></i>
+                    <span class="hidden xl:inline">Swap Logo</span>
+                </button>
+                <button onclick="toggleDarkMode()" title="Toggle Light/Dark Theme" aria-label="Toggle Light/Dark Theme" class="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-200/60 dark:hover:bg-[#111c17] transition-colors cursor-pointer">
                     <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
                     <i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i>
                 </button>
-                <a href="#live-coach" onclick="focusChatInput()" class="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-md shadow-emerald-500/20 transition-all active:scale-95">
+                <a href="#live-coach" onclick="focusChatInput()" class="inline-flex items-center gap-1.5 bg-[#00f59b] hover:bg-emerald-300 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-md shadow-[#00f59b]/20 transition-all active:scale-95">
                     <i data-lucide="zap" class="w-3.5 h-3.5 stroke-[2.5]"></i>
                     <span>Launch Coach</span>
                 </a>
@@ -235,36 +256,48 @@
     <!-- ========================================== -->
     <!-- 2. HERO BANNER SECTION                     -->
     <!-- ========================================== -->
-    <section class="relative overflow-hidden pt-12 pb-14 sm:pt-16 sm:pb-20 border-b border-slate-200/70 dark:border-emerald-950/70">
+    <section class="relative overflow-hidden pt-10 pb-14 sm:pt-14 sm:pb-20 border-b border-slate-200/70 dark:border-emerald-950/80">
         <!-- Ambient Radial Pitch Glow -->
-        <div class="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[48rem] h-[22rem] bg-emerald-500/10 blur-3xl rounded-full"></div>
+        <div class="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[50rem] h-[24rem] bg-[#00f59b]/10 blur-3xl rounded-full"></div>
 
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
             <div class="max-w-3xl mx-auto text-center space-y-6">
+                <!-- Featured TACTIQ Crest Emblem -->
+                <div class="relative inline-block mx-auto">
+                    <div class="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl bg-black border-2 border-[#00f59b]/50 p-1.5 tactiq-logo-glow overflow-hidden mx-auto">
+                        <img src="0c75b695-1250-4609-be76-fa0d25ae6f8f.png" alt="TACTIQ Shield Crest" class="tactiq-logo-img w-full h-full object-contain rounded-2xl">
+                    </div>
+                    <span class="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-0.5 rounded-full bg-[#060a08] text-[#00f59b] border border-[#00f59b]/40 shadow-md">
+                        TACTIQ ENGINE v1.0
+                    </span>
+                </div>
+
                 <!-- Eyebrow Pill -->
-                <div class="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-3.5 py-1.5 rounded-full">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Virtual Biomechanics & Solo Training Platform</span>
+                <div class="pt-1">
+                    <div class="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-emerald-700 dark:text-[#00f59b] bg-[#00f59b]/10 border border-[#00f59b]/25 px-3.5 py-1.5 rounded-full">
+                        <span class="w-2 h-2 rounded-full bg-[#00f59b] animate-pulse"></span>
+                        <span>Virtual Biomechanics & Solo Training Platform</span>
+                    </div>
                 </div>
 
                 <!-- Headline -->
                 <h1 class="text-3xl sm:text-5xl lg:text-[3.35rem] font-black tracking-tight text-slate-900 dark:text-white leading-[1.12]">
-                    Stop Practicing Bad Habits. Train With <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">Real-Time AI Biomechanics.</span>
+                    Stop Practicing Bad Habits. Train With <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#00f59b] to-teal-300">Real-Time AI Biomechanics.</span>
                 </h1>
 
                 <!-- Subheadline -->
                 <p class="text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
-                    Solo soccer players often reinforce flawed mechanics when practicing without a coach. Our computer-vision platform transforms standard smartphone video into instant pose-tracking telemetry, joint-angle diagnostics, and injury-prevention feedback.
+                    Solo soccer players often reinforce flawed mechanics when practicing without a coach. <strong class="text-slate-900 dark:text-white font-bold">TACTIQ</strong> transforms standard smartphone video into instant pose-tracking telemetry, joint-angle diagnostics, and injury-prevention feedback.
                 </p>
 
                 <!-- Quick-Action Buttons -->
                 <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-                    <a href="#live-coach" onclick="focusChatInput()" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]">
+                    <a href="#live-coach" onclick="focusChatInput()" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#00f59b] hover:bg-emerald-300 text-slate-950 font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg shadow-[#00f59b]/20 transition-all active:scale-[0.98]">
                         <i data-lucide="activity" class="w-4 h-4 stroke-[2.4]"></i>
                         <span>Start Coaching Session</span>
                     </a>
-                    <a href="#cv-pipeline" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white dark:bg-[#111c16] hover:bg-slate-100 dark:hover:bg-[#16241d] text-slate-800 dark:text-slate-100 font-semibold text-sm px-6 py-3.5 rounded-2xl border border-slate-200 dark:border-emerald-900/70 transition-all">
-                        <i data-lucide="cpu" class="w-4 h-4 text-emerald-500"></i>
+                    <a href="#cv-pipeline" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white dark:bg-[#0b130f] hover:bg-slate-100 dark:hover:bg-[#111c17] text-slate-800 dark:text-slate-100 font-semibold text-sm px-6 py-3.5 rounded-2xl border border-slate-200 dark:border-emerald-900/70 transition-all">
+                        <i data-lucide="cpu" class="w-4 h-4 text-[#00f59b]"></i>
                         <span>Explore ML Architecture</span>
                     </a>
                 </div>
@@ -330,13 +363,13 @@
                     <!-- Brand Header -->
                     <div class="p-4 border-b border-slate-200/80 dark:border-emerald-950/80 flex items-center justify-between">
                         <div class="flex items-center gap-2.5">
-                            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/20">
-                                <i data-lucide="trophy" class="w-5 h-5 stroke-[2.2]"></i>
+                            <div class="w-10 h-10 rounded-xl bg-black border border-[#00f59b]/40 overflow-hidden flex items-center justify-center shadow-md shadow-[#00f59b]/15 shrink-0">
+                                <img src="0c75b695-1250-4609-be76-fa0d25ae6f8f.png" alt="TACTIQ Logo" class="tactiq-logo-img w-full h-full object-contain">
                             </div>
                             <div>
                                 <div class="flex items-center gap-1.5">
-                                    <span class="font-bold text-sm tracking-tight text-slate-900 dark:text-white">AI Soccer Coach</span>
-                                    <span class="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">v1.0</span>
+                                    <span class="font-black text-sm tracking-wider text-slate-900 dark:text-white">TACTI<span class="text-[#00f59b]">Q</span></span>
+                                    <span class="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-md bg-[#00f59b]/15 text-emerald-700 dark:text-[#00f59b] border border-[#00f59b]/25">v1.0</span>
                                 </div>
                                 <p class="text-[11px] text-slate-500 dark:text-slate-400">Launchpad Project Team</p>
                             </div>
@@ -436,14 +469,14 @@
                             
                             <!-- Welcome Empty State -->
                             <div id="empty-state" class="py-4 sm:py-8 text-center space-y-6 animate-fade-in">
-                                <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-slate-950 shadow-xl shadow-emerald-500/20 mx-auto">
-                                    <i data-lucide="shield-check" class="w-7 h-7 stroke-[2.2]"></i>
-                                    <span class="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0b130f]"></span>
+                                <div class="relative inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-black border-2 border-[#00f59b]/50 p-1 tactiq-logo-glow mx-auto overflow-hidden">
+                                    <img src="0c75b695-1250-4609-be76-fa0d25ae6f8f.png" alt="TACTIQ Crest" class="tactiq-logo-img w-full h-full object-contain rounded-xl">
+                                    <span class="absolute bottom-1 right-1 w-3 h-3 rounded-full bg-[#00f59b] border-2 border-black"></span>
                                 </div>
 
                                 <div class="space-y-2 max-w-lg mx-auto">
-                                    <div class="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
-                                        <span>Launchpad AI • Computer Vision & Biomechanics</span>
+                                    <div class="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-emerald-700 dark:text-[#00f59b] bg-[#00f59b]/10 border border-[#00f59b]/25 px-3 py-1 rounded-full">
+                                        <span>TACTIQ AI • Computer Vision & Biomechanics</span>
                                     </div>
                                     <h3 id="welcome-heading" class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Train Smarter. Build Zero Bad Habits.</h3>
                                     <p id="welcome-subtitle" class="text-sm text-slate-600 dark:text-slate-400">
@@ -739,16 +772,20 @@
     <!-- ========================================== -->
     <!-- 6. FOOTER                                  -->
     <!-- ========================================== -->
-    <footer class="border-t border-slate-200/80 dark:border-emerald-950/90 bg-white dark:bg-[#080e0b] py-8">
+    <footer class="border-t border-slate-200/80 dark:border-emerald-950/90 bg-white dark:bg-[#060a08] py-8">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-500 flex items-center justify-center border border-emerald-500/25">
-                    <i data-lucide="trophy" class="w-4 h-4"></i>
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-black border border-[#00f59b]/35 overflow-hidden flex items-center justify-center shrink-0">
+                    <img src="0c75b695-1250-4609-be76-fa0d25ae6f8f.png" alt="TACTIQ Logo" class="tactiq-logo-img w-full h-full object-contain">
                 </div>
-                <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">AI Soccer Coach — Launchpad Project Platform</span>
+                <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">TACTIQ — AI Soccer Coach & Launchpad Project Platform</span>
             </div>
             <div class="flex items-center gap-4 text-xs">
-                <a href="#live-coach" onclick="focusChatInput()" class="inline-flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-300 transition-colors">
+                <button type="button" onclick="triggerLogoUpload()" class="inline-flex items-center gap-1.5 font-medium text-slate-500 dark:text-slate-400 hover:text-[#00f59b] transition-colors cursor-pointer">
+                    <i data-lucide="image-plus" class="w-3.5 h-3.5"></i>
+                    <span>Update Logo Image</span>
+                </button>
+                <a href="#live-coach" onclick="focusChatInput()" class="inline-flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-[#00f59b] hover:text-emerald-300 transition-colors">
                     <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
                     <span>Back to Live AI Coach</span>
                 </a>
@@ -936,6 +973,7 @@
         const MODEL_NAME = "gemini-3-flash-preview";
         const STORAGE_KEY = "ai_soccer_coach_sessions_v1";
         const THEME_KEY = "ai_soccer_coach_theme";
+        const LOGO_STORAGE_KEY = "tactiq_custom_logo_data_v1";
 
         let conversations = [];
         let activeConversationId = null;
@@ -1079,6 +1117,7 @@ Help the Project Team make concrete, achievable engineering, dataset, UX, ethics
         // ==========================================
         document.addEventListener('DOMContentLoaded', () => {
             initTheme();
+            initLogo();
             loadConversations();
             applyModeUI();
             
@@ -1090,6 +1129,61 @@ Help the Project Team make concrete, achievable engineering, dataset, UX, ethics
 
             lucide.createIcons();
         });
+
+        // ==========================================
+        // LOGO MANAGEMENT & FALLBACK
+        // ==========================================
+        function initLogo() {
+            const savedLogo = localStorage.getItem(LOGO_STORAGE_KEY);
+            if (savedLogo) {
+                applyLogoSrc(savedLogo);
+            }
+            document.querySelectorAll('.tactiq-logo-img').forEach(img => {
+                img.onerror = function() {
+                    this.onerror = null;
+                    this.src = createFallbackTactiqBadge();
+                };
+            });
+        }
+
+        function applyLogoSrc(src) {
+            document.querySelectorAll('.tactiq-logo-img').forEach(img => {
+                img.src = src;
+            });
+        }
+
+        function triggerLogoUpload() {
+            const input = document.getElementById('logo-file-input');
+            if (input) input.click();
+        }
+
+        function handleLogoFileUpload(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const dataUrl = e.target?.result;
+                if (typeof dataUrl === 'string') {
+                    applyLogoSrc(dataUrl);
+                    try {
+                        localStorage.setItem(LOGO_STORAGE_KEY, dataUrl);
+                    } catch (err) {
+                        // Ignore storage quota if image is very large
+                    }
+                    showToast("TACTIQ logo updated");
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function createFallbackTactiqBadge() {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                <rect width="200" height="200" fill="#060a08"/>
+                <path d="M100 16 L172 44 V104 C172 148 140 174 100 186 C60 174 28 148 28 104 V44 Z" fill="#0b130f" stroke="#00f59b" stroke-width="6"/>
+                <text x="100" y="114" text-anchor="middle" fill="#ffffff" font-family="Inter, sans-serif" font-weight="900" font-size="34" letter-spacing="2">TACTI<tspan fill="#00f59b">Q</tspan></text>
+            </svg>`;
+            return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+        }
 
         // ==========================================
         // THEME & MODE MANAGEMENT
